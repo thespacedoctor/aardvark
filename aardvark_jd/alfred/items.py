@@ -34,6 +34,15 @@ CACHE = {"seconds": 3600, "loosereload": True}
 
 INSTALL_COMMAND = "aardvark install_alfred"
 
+# THE MUTATING COMMANDS THAT HAVE A ROW, AS `(command, subtitle, extra match
+# words)`. THEY SHARE THE ONE LIST WITH THE ENTITIES BECAUSE "ALFRED FILTERS
+# RESULTS" RUNS THE SCRIPT FILTER ONCE, WITH AN EMPTY QUERY - THERE IS NO
+# SECOND PASS TO ADD THEM IN. `fd`, `open` AND `cd` EARN NO ROWS: THEY ARE
+# WHAT AN ENTITY ROW'S RETURN AND MODIFIERS ALREADY DO.
+_COMMANDS = (
+    ("add_id", "Add a new Johnny Decimal ID to a category", "new id add create"),
+)
+
 # THE MIRRORS RETURN OPENS, IN THE ORDER `aardvark open` OPENS THEM.
 # FINDER HAS ITS OWN MODIFIER AND DROPBOX IS ONLY IN THE SUB-LIST.
 _OPENABLE_MIRRORS = (
@@ -225,7 +234,7 @@ def _install_row(title, subtitle):
     )
 
 
-def _error_row(error):
+def error_row(error):
     """
     *render the contract's own error object as a single row*
 
@@ -263,6 +272,101 @@ def _error_row(error):
     )
 
 
+def reference_payload(contract, entityType):
+    """
+    *the mutating flow's first step: the entities that are valid parents for the command*
+
+    A filtered view of the same `fd --json` envelope the main list is
+    built from, so the pick costs one shell-out and no new contract.
+
+    **Key Arguments:**
+
+    - ``contract`` -- the parsed `aardvark fd --json` envelope
+    - ``entityType`` -- the entity type that can be a parent, e.g. `category`
+
+    **Return:**
+
+    - ``payload`` -- the Script Filter response dict
+
+    **Usage:**
+
+    ```python
+    from aardvark_jd.alfred import items
+    payload = items.reference_payload(json.load(sys.stdin), "category")
+    ```
+    """
+    if contract.get("aardvark_json") != json_output.AARDVARK_JSON_VERSION:
+        return {
+            "items": [_install_row(
+                "This workflow is out of step with the installed aardvark",
+                f"Press ↩ to copy `{INSTALL_COMMAND}`, then run it in a terminal",
+            )],
+        }
+
+    if contract.get("error"):
+        return {"items": [error_row(contract["error"])]}
+
+    rootPath = (contract.get("system") or {}).get("root_path")
+    rows = []
+    for entity in contract.get("entities") or []:
+        if entity.get("type") != entityType:
+            continue
+        code = entity.get("code", "")
+        # BUILT FROM THE ENTITY ROW'S *PIECES*, NOT BY MERGING OVER THE WHOLE
+        # ROW. A MERGE LEAVES `mods`, `uid` AND `skipknowledge` BEHIND, WHICH
+        # WOULD OFFER "REVEAL THE FOLDER IN FINDER" ON A ROW WHOSE ONLY JOB
+        # IS TO NAME A PARENT.
+        rows.append({
+            "title": _entity_title(entity),
+            "subtitle": _relative_path(entity["folder_path"], rootPath),
+            "match": _match_string(entity, rootPath),
+            "arg": code,
+            "valid": True,
+            # `root_path` TRAVELS WITH THE PICK BECAUSE THE LATER STEPS NEED
+            # IT AND MUST NOT FETCH THE WHOLE INDEX AGAIN TO GET IT.
+            "variables": {
+                "action": "reference", entityType: code, "root_path": rootPath or "",
+            },
+        })
+
+    if not rows:
+        # A SCRIPT FILTER CANNOT RAISE, SO AN EMPTY PARENT LIST IS A ROW.
+        return {"items": [_row(
+            f"No {entityType} to add this to yet",
+            f"Create a {entityType} first",
+        )]}
+
+    return {"items": rows}
+
+
+def command_items():
+    """
+    *the rows that start a mutating flow, for the one list they share with the entities*
+
+    A command row opens nothing. Its Return hands the flow's first step
+    the command name, and the conditional on the way out tells a command
+    row from an entity row by its `action` variable.
+
+    **Return:**
+
+    - ``rows`` -- one Alfred item dict per mutating command with a surface
+
+    **Usage:**
+
+    ```python
+    from aardvark_jd.alfred import items
+    rows = items.command_items()
+    ```
+    """
+    return [
+        _row(
+            command, subtitle, arg=command, valid=True,
+            variables={"action": "command", "command": command},
+        ) | {"match": f"{command} {command.replace('_', ' ')} {matchWords}"}
+        for command, subtitle, matchWords in _COMMANDS
+    ]
+
+
 def script_filter_payload(contract, workflowVersion=None):
     """
     *render a whole `fd --json` envelope as the Script Filter's response*
@@ -292,11 +396,16 @@ def script_filter_payload(contract, workflowVersion=None):
         }
 
     if contract.get("error"):
-        return {"items": [_error_row(contract["error"])]}
+        return {"items": [error_row(contract["error"])]}
 
     system = contract.get("system") or {}
     rootPath = system.get("root_path")
-    rows = [entity_item(entity, rootPath) for entity in contract.get("entities") or []]
+    # THE ENTITIES LEAD. THEY ARE WHAT GETS TYPED TWENTY TIMES A DAY, AND
+    # WITH AN EMPTY QUERY ALFRED SHOWS THIS ORDER VERBATIM; ONCE ANYTHING IS
+    # TYPED ALFRED'S OWN MATCHING DECIDES, SO `av add` STILL FINDS `add_id`.
+    rows = [
+        entity_item(entity, rootPath) for entity in contract.get("entities") or []
+    ] + command_items()
 
     # A WARNING, NEVER A BLOCKER: THE WORKFLOW STILL WORKS, IT IS JUST
     # OLDER OR NEWER THAN THE CLI IT IS DRIVING.

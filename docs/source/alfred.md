@@ -36,6 +36,24 @@ On a result:
 
 The four mirrors are a sub-list rather than four more modifier chords for one reason: a sub-list can show you a mirror that is **not** synced yet and offer to run that mirror's sync on ↩. An unbound chord could only do nothing.
 
+## Creating an ID
+
+The same `av` list carries a row per mutating command, below the entities. `add_id` is the first of them. Pressing ↩ on it starts a flow with five steps:
+
+1. **Choose a category.** The categories from the same index, filtered.
+2. **Type the title and description** into one field, as `title, description`. The split is on the **first comma only**; everything after it is the description, commas and all. A title that contains a comma loses the fragment after the first one to the description, and step 3 shows you that before anything is written. With no comma, the description is empty.
+3. **Confirm.** ↩ here creates the folder; Escape backs out. **Create as typed** is the first row and always what ↩ does.
+4. **It is created**, and the mirroring is backgrounded, so Alfred returns immediately.
+5. **The success surface** offers the new folder straight away: reveal, handoff, and each mirror. Use it rather than searching for what you just made - the `av` list caches the index for an hour and refreshes in the background, so a brand-new folder shows up there one invocation late at worst.
+
+The argument step's first row goes back to the category pick while the field is empty. Once you have typed something the parse takes the top row, so ↩ always means "carry on"; the way back stays visible below it.
+
+### Spelling corrections
+
+If the title contains a word the spell-checker does not recognise, the confirmation screen grows one extra row per suspect word, below **Create as typed**. Accepting one re-renders the confirmation rather than creating anything, so you can accept several, and ↩ still means create.
+
+**This differs from the terminal on purpose.** At the terminal, declining a suggestion teaches aardvark that the word is real, so it stops asking. Here, declining is what ↩ already does, so that rule would teach a word every time you pressed Return without reading. Teaching therefore needs its own key: **⌘↩ on a correction row** records the word, and it is never flagged again.
+
 ## Configuration
 
 Two settings, under Alfred's **Configure Workflow…**:

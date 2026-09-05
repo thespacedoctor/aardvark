@@ -7,7 +7,7 @@ Usage:
     aardvark init <systemName> <parentPath> [-s <pathToSettingsFile>]
     aardvark add_area <domainLetter> <title> <description> [-e <emoji>] [-w] [-s <pathToSettingsFile>]
     aardvark add_category <area> <title> <description> [-e <emoji>] [-w] [-s <pathToSettingsFile>]
-    aardvark add_id <category> <title> <description> [-w] [-s <pathToSettingsFile>]
+    aardvark add_id <category> <title> <description> [--json] [-w] [-s <pathToSettingsFile>]
     aardvark add_project <category> <projectTitle> [-t <templateName>] [-w] [-s <pathToSettingsFile>]
     aardvark archive <ref> [-y] [-w] [-s <pathToSettingsFile>]
     aardvark fd [<term>...] [--json] [--archived] [-s <pathToSettingsFile>]
@@ -478,9 +478,13 @@ def _hand_off_sync(a, log, indexDbConn, settings):
     - ``log`` -- logger
     - ``indexDbConn`` -- an open SQLite connection to the active system's index
     - ``settings`` -- the aardvark settings dict
+
+    **Return:**
+
+    - ``sync`` -- what became of the mirroring: `backgrounded`, `waited` or `none`. The JSON contract reports it; the prose path ignores it.
     """
     if not any((settings.get(mirror) or {}).get("enabled") for mirror in db.MIRRORS):
-        return
+        return "none"
 
     rootPath = (settings.get("system") or {}).get("root_path")
 
@@ -491,11 +495,12 @@ def _hand_off_sync(a, log, indexDbConn, settings):
         _report_sync_outcome(failures)
         if failures:
             sys.exit(1)
-        return
+        return "waited"
 
     background_sync.spawn_detached(
         pathToSettingsFile=a.get("settingsFlag"), log=log,
     )
+    return "backgrounded"
 
 
 def _maybe_sync_gdrive(log, indexDbConn, settings):
@@ -631,12 +636,22 @@ def _dispatch(a, log, indexDbConn, settings):
 
     elif a["add_id"]:
         domain, _ = codes.split_category_ref(a["category"])
-        code, folderPath = add_id(
+        jsonRequested = a.get("jsonFlag")
+        code, folderPath, details = add_id(
             log=log, dbConn=indexDbConn, domain=domain, categoryRef=a["category"],
             title=a["title"], description=a["description"], settings=settings,
+            # `--json` PROMISES IT NEVER PROMPTS. THAT PROMISE IS THIS FLAG'S
+            # TO MAKE, NOT THE TERMINAL'S TO IMPLY - RUN FROM A REAL SHELL,
+            # AN INFERRED `isatty` WOULD BLOCK ON A PROMPT NOBODY IS READING.
+            interactive=False if jsonRequested else None,
         ).get()
-        print(f"{code}  {folderPath}")
-        _hand_off_sync(a, log, indexDbConn, settings)
+        if not jsonRequested:
+            print(f"{code}  {folderPath}")
+        sync = _hand_off_sync(a, log, indexDbConn, settings)
+        if jsonRequested:
+            _mutating_json(
+                "add_id", details, folderPath, indexDbConn, settings, sync,
+            )
 
     elif a["fd"]:
         if a.get("jsonFlag"):
@@ -861,6 +876,50 @@ def _open_json(a, indexDbConn, settings):
         )
 
     _print_json(json_output.result_envelope("open", entity=matches[0], label=label))
+
+
+def _mutating_json(action, details, folderPath, indexDbConn, settings, sync):
+    """
+    *print the uniform mutating result for a command that has just written something*
+
+    One shape across every mutating command, so the workflow renders
+    them all the same way. `corrections` and `suggestions` come straight
+    off the worker and stay strictly apart: the first is what was
+    applied, the second what was offered and not accepted.
+
+    The entity is resolved from the folder the command just created,
+    which is the same single-row read `open --json` does - the record it
+    returns is what the success surface is built from.
+
+    **Key Arguments:**
+
+    - ``action`` -- the command's action token, e.g. `add_id`
+    - ``details`` -- the `{"corrections", "suggestions"}` dict the worker returned
+    - ``folderPath`` -- the folder the command created
+    - ``indexDbConn`` -- an open SQLite connection to the active system's index
+    - ``settings`` -- the aardvark settings dict
+    - ``sync`` -- `_hand_off_sync`'s label for what became of the mirroring
+    """
+    rootPath = (settings.get("system") or {}).get("root_path")
+    entityType, entityKey, _folderPath, _label = locate.entity_for_path(
+        indexDbConn, folderPath, rootPath=rootPath,
+    )
+    records = json_output.entity_records(
+        db.entities_with_links(indexDbConn, entityType=entityType, rowKey=entityKey)
+    )
+    if not records:
+        # THE ROW WAS JUST WRITTEN ON THIS CONNECTION, SO THIS CANNOT HAPPEN
+        # TODAY. IT IS CHECKED ANYWAY BECAUSE EVERYTHING ELSE ON THIS PATH IS
+        # WRITTEN SO THAT ALFRED NEVER SEES A TRACEBACK.
+        raise ValueError(f"'{folderPath}' was created but is not in the index")
+
+    _print_json(json_output.result_envelope(
+        action,
+        entity=records[0],
+        corrections=details["corrections"],
+        suggestions=details["suggestions"],
+        sync=sync,
+    ))
 
 
 def _id_row_for_ref(indexDbConn, ref):

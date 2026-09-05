@@ -110,6 +110,64 @@ def test_non_alphabetic_tokens_are_skipped():
     assert spell_check.tokenise("A11.10 project2024 hello1") == []
 
 
+# ------------------------------------------------- detection without a prompt
+
+def test_detect_reports_each_suspect_token_with_its_position():
+    """
+    *the confirmation screen renders these, so the position has to travel with them*
+
+    `index` is the token's position in `tokenise`'s output, not a
+    character offset, so a correction row can substitute without
+    re-parsing the title.
+    """
+    suggestions = spell_check.detect("Cardilogist appointment notes")
+
+    assert suggestions == [
+        {"token": "Cardilogist", "index": 0, "suggested": "cardiologist"},
+    ]
+
+
+def test_detect_never_prompts_even_on_a_terminal(monkeypatch):
+    """*this is the whole point of it - `--json` must detect without asking*"""
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+
+    def refuse(prompt=""):
+        raise AssertionError("detect must never prompt")
+
+    monkeypatch.setattr("builtins.input", refuse)
+
+    assert spell_check.detect("Cardilogist notes")
+
+
+def test_detect_returns_the_title_untouched_by_saying_nothing_about_clean_tokens():
+    assert spell_check.detect("Cardiologist appointment notes") == []
+
+
+def test_detect_reports_a_repeated_token_once_at_its_first_position():
+    """*one decision covers every occurrence, exactly as the prompt path does*"""
+    suggestions = spell_check.detect("notes Cardilogist and cardilogist")
+
+    assert [item["token"] for item in suggestions] == ["Cardilogist"]
+    assert suggestions[0]["index"] == 1
+
+
+def test_detect_filters_through_the_learned_vocabulary(tmp_path):
+    vocabulary.remember(str(tmp_path), "Cardilogist", log=log)
+
+    assert spell_check.detect("Cardilogist notes", rootPath=str(tmp_path), log=log) == []
+
+
+def test_detect_respects_the_off_switch():
+    settings = {"spell_check": {"enabled": False}}
+
+    assert spell_check.detect("Cardilogist notes", settings=settings) == []
+
+
+def test_detect_copes_with_an_empty_title():
+    assert spell_check.detect("") == []
+    assert spell_check.detect(None) == []
+
+
 # ---------------------------------------------------------------- the prompt
 
 def test_accepting_a_correction_rewrites_only_that_token(interactive, tmp_path):
@@ -346,3 +404,135 @@ def test_checked_title_finds_the_root_path_from_settings(interactive, tmp_path):
 def test_checked_title_copes_with_no_settings_at_all(interactive):
     interactive(["n"])
     assert spell_check.checked_title("Aadvark", None, log) == "Aadvark"
+
+
+# ------------------------------------------ what the mutating commands report
+
+def test_the_details_report_an_accepted_substitution_as_a_correction(interactive, tmp_path):
+    """
+    *`corrections` is what was applied, and the contract keeps it separate from what was merely offered*
+    """
+    interactive(["y"])
+    settings = {"system": {"root_path": str(tmp_path)}}
+
+    details = spell_check.checked_title_details("Aadvark notes", settings, log)
+
+    assert details["title"] == "Aardvark notes"
+    assert details["corrections"] == [{"from": "Aadvark", "to": "Aardvark"}]
+
+
+def test_a_declined_suggestion_is_no_correction(interactive, tmp_path):
+    interactive(["n"])
+    settings = {"system": {"root_path": str(tmp_path)}}
+
+    details = spell_check.checked_title_details("Aadvark notes", settings, log)
+
+    assert details["title"] == "Aadvark notes"
+    assert details["corrections"] == []
+
+
+def test_the_details_carry_the_suggestions_a_headless_run_never_offered(
+    nonInteractive, tmp_path, capsys,
+):
+    """
+    *the case the whole field exists for*
+
+    Headless, the check prompts about nothing and applies nothing, so
+    `corrections` is empty in exactly the run Alfred needs filled.
+    Detection runs anyway and lands in `suggestions`.
+    """
+    settings = {"system": {"root_path": str(tmp_path)}}
+
+    details = spell_check.checked_title_details("Aadvark notes", settings, log)
+
+    assert details["title"] == "Aadvark notes"
+    assert details["corrections"] == []
+    assert details["suggestions"] == [
+        {"token": "Aadvark", "index": 0, "suggested": "aardvark"},
+    ]
+
+
+def test_a_corrected_token_no_longer_appears_as_a_suggestion(interactive, tmp_path):
+    """*detection runs on the title actually being used, not the one typed*"""
+    interactive(["y"])
+    settings = {"system": {"root_path": str(tmp_path)}}
+
+    details = spell_check.checked_title_details("Aadvark notes", settings, log)
+
+    assert details["suggestions"] == []
+
+
+def test_a_clean_title_reports_neither(interactive):
+    details = spell_check.checked_title_details("Cardiologist notes", None, log)
+
+    assert details == {
+        "title": "Cardiologist notes", "corrections": [], "suggestions": [],
+    }
+
+
+# ------------------------------------ substituting a suggestion without a prompt
+
+def test_substituting_a_suggestion_carries_the_original_capitalisation():
+    """*the suggestion is a lowercase dictionary word; the typed case wins*"""
+    assert spell_check.substituted_title(
+        "Aadvark notes", "Aadvark", "aardvark",
+    ) == "Aardvark notes"
+    assert spell_check.substituted_title(
+        "AADVARK notes", "AADVARK", "aardvark",
+    ) == "AARDVARK notes"
+
+
+def test_substituting_a_suggestion_replaces_every_occurrence():
+    """*the decision is about the word, exactly as at the prompt*"""
+    assert spell_check.substituted_title(
+        "aadvark and aadvark", "aadvark", "aardvark",
+    ) == "aardvark and aardvark"
+
+
+def test_substituting_leaves_the_other_tokens_and_separators_alone():
+    assert spell_check.substituted_title(
+        "Aadvark_notes and things", "Aadvark", "aardvark",
+    ) == "Aardvark_notes and things"
+
+
+def test_substituting_a_token_that_is_not_there_changes_nothing():
+    assert spell_check.substituted_title("notes", "Aadvark", "aardvark") == "notes"
+
+
+# ------------------------------ `--json` never prompts, whatever stdin happens to be
+
+def test_the_check_can_be_told_not_to_prompt_even_on_a_terminal(monkeypatch, tmp_path):
+    """
+    *`--json` promises it never prompts, and a tty is not what makes that true*
+
+    Alfred's subprocess has no tty, so inferring it from `isatty` happens
+    to work there and blocks forever for anyone running `--json` from a
+    real terminal.
+    """
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+
+    def refuse(prompt=""):
+        raise AssertionError("a non-interactive check must never prompt")
+
+    monkeypatch.setattr("builtins.input", refuse)
+    settings = {"system": {"root_path": str(tmp_path)}}
+
+    details = spell_check.checked_title_details(
+        "Aadvark notes", settings, log, interactive=False,
+    )
+
+    assert details["title"] == "Aadvark notes"
+    assert details["corrections"] == []
+    assert details["suggestions"] == [
+        {"token": "Aadvark", "index": 0, "suggested": "aardvark"},
+    ]
+
+
+def test_the_check_still_reads_the_terminal_when_it_is_not_told(interactive, tmp_path):
+    """*the default stays "ask if there is someone to ask"*"""
+    interactive(["y"])
+    settings = {"system": {"root_path": str(tmp_path)}}
+
+    details = spell_check.checked_title_details("Aadvark notes", settings, log)
+
+    assert details["title"] == "Aardvark notes"

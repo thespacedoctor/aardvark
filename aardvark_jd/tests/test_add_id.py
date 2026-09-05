@@ -30,7 +30,7 @@ def dbConnWithCategory(tmp_path):
 
 
 def test_add_id_happy_path(dbConnWithCategory):
-    code, folderPath = add_id(
+    code, folderPath, _details = add_id(
         log=log, dbConn=dbConnWithCategory, domain="areas", categoryRef="A11",
         title="Cardiologist", description="Dr Smith",
     ).get()
@@ -53,7 +53,7 @@ def test_add_id_happy_path_projects_domain(tmp_path):
     add_area(log=log, dbConn=conn, domain="projects", title="Launches", description="").get()
     add_category(log=log, dbConn=conn, domain="projects", areaRef="P10", title="Website", description="").get()
 
-    code, folderPath = add_id(
+    code, folderPath, _details = add_id(
         log=log, dbConn=conn, domain="projects", categoryRef="P11",
         title="Redesign", description="",
     ).get()
@@ -92,7 +92,7 @@ def test_an_accepted_correction_reaches_the_id_folder_and_index(dbConnWithCatego
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     monkeypatch.setattr("builtins.input", lambda prompt="": "y")
 
-    _code, folderPath = add_id(
+    _code, folderPath, _details = add_id(
         log=log, dbConn=dbConnWithCategory, domain="areas", categoryRef="A11",
         title="Aadvark", description="d", settings={"system": {"root_path": rootPath}},
     ).get()
@@ -104,10 +104,84 @@ def test_an_accepted_correction_reaches_the_id_folder_and_index(dbConnWithCatego
 
 def test_add_id_still_works_with_no_settings_at_all(dbConnWithCategory):
     """*`settings` is optional - an omitted one must not break the command*"""
-    code, folderPath = add_id(
+    code, folderPath, _details = add_id(
         log=log, dbConn=dbConnWithCategory, domain="areas", categoryRef="A11",
         title="Cardiologist", description="d",
     ).get()
 
     assert code == "A11.10"
     assert os.path.isdir(folderPath)
+
+
+# ---------------------------------------- what the worker reports back to Alfred
+
+def test_add_id_reports_the_suspect_tokens_it_never_prompted_about(
+    dbConnWithCategory, monkeypatch,
+):
+    """
+    *headless, the check applies nothing, so `suggestions` is the only field with anything in it*
+
+    This is what `--json` hands the Alfred confirmation screen: the
+    entity was created as typed, and the offers are still outstanding.
+    """
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    rootPath = os.path.dirname(
+        db.get_system_folder(dbConnWithCategory, "root.areas")["folder_path"]
+    )
+
+    _code, _folderPath, details = add_id(
+        log=log, dbConn=dbConnWithCategory, domain="areas", categoryRef="A11",
+        title="Aadvark", description="d", settings={"system": {"root_path": rootPath}},
+    ).get()
+
+    assert details["corrections"] == []
+    assert details["suggestions"] == [
+        {"token": "Aadvark", "index": 0, "suggested": "aardvark"},
+    ]
+
+
+def test_add_id_reports_an_applied_correction(dbConnWithCategory, monkeypatch):
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda prompt="": "y")
+    rootPath = os.path.dirname(
+        db.get_system_folder(dbConnWithCategory, "root.areas")["folder_path"]
+    )
+
+    _code, _folderPath, details = add_id(
+        log=log, dbConn=dbConnWithCategory, domain="areas", categoryRef="A11",
+        title="Aadvark", description="d", settings={"system": {"root_path": rootPath}},
+    ).get()
+
+    assert details["corrections"] == [{"from": "Aadvark", "to": "Aardvark"}]
+    assert details["suggestions"] == []
+
+
+def test_add_id_reports_nothing_for_a_clean_title(dbConnWithCategory):
+    _code, _folderPath, details = add_id(
+        log=log, dbConn=dbConnWithCategory, domain="areas", categoryRef="A11",
+        title="Cardiologist", description="d",
+    ).get()
+
+    assert details == {"corrections": [], "suggestions": []}
+
+
+def test_add_id_never_prompts_when_it_is_told_not_to(dbConnWithCategory, monkeypatch):
+    """*`--json` promises it never prompts, and a tty is not what makes that true*"""
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+
+    def refuse(prompt=""):
+        raise AssertionError("a non-interactive add_id must never prompt")
+
+    monkeypatch.setattr("builtins.input", refuse)
+    rootPath = os.path.dirname(
+        db.get_system_folder(dbConnWithCategory, "root.areas")["folder_path"]
+    )
+
+    code, _folderPath, details = add_id(
+        log=log, dbConn=dbConnWithCategory, domain="areas", categoryRef="A11",
+        title="Aadvark", description="d", settings={"system": {"root_path": rootPath}},
+        interactive=False,
+    ).get()
+
+    assert code == "A11.10"
+    assert details["suggestions"]

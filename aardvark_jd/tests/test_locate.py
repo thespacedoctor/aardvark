@@ -31,7 +31,7 @@ def dbConn(tmp_path):
 def seeded(dbConn):
     add_area(log=log, dbConn=dbConn, domain="areas", title="Health", description="d1").get()
     add_category(log=log, dbConn=dbConn, domain="areas", areaRef="A10", title="Doctors", description="d2").get()
-    _code, idFolderPath = add_id(
+    _code, idFolderPath, _details = add_id(
         log=log, dbConn=dbConn, domain="areas", categoryRef="A11", title="Cardiologist", description="d3"
     ).get()
     categoryFolderPath = db.get_category(dbConn, "areas", 11)["folder_path"]
