@@ -1,3 +1,4 @@
+import logging
 import os
 
 import pytest
@@ -7,6 +8,9 @@ from docopt import docopt
 from aardvark_jd import cl_utils
 
 doc = cl_utils.__doc__
+
+log = logging.getLogger("test_cl_utils")
+log.addHandler(logging.NullHandler())
 
 
 @pytest.mark.parametrize("command,expectedKey", [
@@ -644,6 +648,7 @@ def test_fd_on_a_category_ref_prints_the_emoji_in_the_tree(isolatedHome, capsys)
     "fd cardio --json",
     "open --json",
     "open /some/path --json",
+    "add_id A11 Cardiologist heart --json",
 ])
 def test_docopt_accepts_the_json_flag_where_the_contract_defines_it(command):
     args = docopt(doc, command.split(" "))
@@ -856,3 +861,146 @@ def test_the_very_first_json_invocation_on_a_machine_prints_only_the_object(isol
     captured = capsys.readouterr()
     assert jsonModule.loads(captured.out)["error"]["kind"] == "no_system"
     assert "Default settings have been added" in captured.err
+
+
+# --------------------------------------------------- the mutating result shape
+
+
+def test_add_id_json_returns_the_uniform_mutating_result(isolatedHome, capsys):
+    """*one shape across every mutating command, so Alfred renders them all the same way*"""
+    import json as jsonModule
+
+    _seededSystem(isolatedHome, capsys)
+
+    cl_utils.main(docopt(doc, ["add_id", "A11", "Podiatrist", "feet", "--json"]))
+    payload = jsonModule.loads(capsys.readouterr().out)
+
+    assert payload["aardvark_json"] == 1
+    result = payload["result"]
+    assert result["action"] == "add_id"
+    assert result["sync"] == "none"
+    assert result["corrections"] == []
+    assert result["suggestions"] == []
+    assert result["warnings"] == []
+    assert "emoji_source" not in result
+    assert "template_used" not in result
+
+
+def test_the_sync_label_says_what_became_of_the_mirroring(isolatedHome, monkeypatch, capsys):
+    """*`sync` reports the disposition, not what was asked for*"""
+    spawned = []
+    monkeypatch.setattr(
+        cl_utils.background_sync, "spawn_detached",
+        lambda **kwargs: spawned.append(kwargs),
+    )
+    settings = {"system": {"root_path": str(isolatedHome)}, "craft": {"enabled": True}}
+
+    label = cl_utils._hand_off_sync({}, log, None, settings)
+
+    assert label == "backgrounded"
+    assert spawned
+
+
+def test_the_sync_label_is_none_when_no_mirror_is_connected(isolatedHome):
+    settings = {"system": {"root_path": str(isolatedHome)}}
+
+    assert cl_utils._hand_off_sync({}, log, None, settings) == "none"
+
+
+def test_add_id_json_carries_the_new_entity_record(isolatedHome, capsys):
+    """*the success surface is built from this record, which is the whole recall story*"""
+    import json as jsonModule
+
+    _seededSystem(isolatedHome, capsys)
+
+    cl_utils.main(docopt(doc, ["add_id", "A11", "Podiatrist", "feet", "--json"]))
+    entity = jsonModule.loads(capsys.readouterr().out)["result"]["entity"]
+
+    assert entity["code"] == "A11.12"
+    assert entity["id"] == "areas:A11.12"
+    assert entity["type"] == "id"
+    assert entity["title"] == "Podiatrist"
+    assert entity["description"] == "feet"
+    assert entity["folder_path"].endswith("A11.12_podiatrist")
+    assert entity["urls"]["finder"]
+    assert entity["urls"]["craft"] is None
+
+
+def test_add_id_json_prints_the_object_and_no_prose(isolatedHome, capsys):
+    """*prose in front of the object would make the whole stream unparseable*"""
+    import json as jsonModule
+
+    _seededSystem(isolatedHome, capsys)
+
+    cl_utils.main(docopt(doc, ["add_id", "A11", "Podiatrist", "feet", "--json"]))
+    captured = capsys.readouterr()
+
+    jsonModule.loads(captured.out)
+    assert "A11.12  " not in captured.out
+
+
+def test_add_id_json_reports_the_suspect_tokens_it_never_prompted_about(
+    isolatedHome, capsys,
+):
+    """
+    *`--json` runs detection despite never prompting*
+
+    Otherwise `suggestions` would be empty in exactly the run the
+    confirmation screen needs it filled for.
+    """
+    import json as jsonModule
+
+    _seededSystem(isolatedHome, capsys)
+
+    cl_utils.main(docopt(doc, ["add_id", "A11", "Aadvark", "notes", "--json"]))
+    result = jsonModule.loads(capsys.readouterr().out)["result"]
+
+    assert result["corrections"] == []
+    assert result["suggestions"] == [
+        {"token": "Aadvark", "index": 0, "suggested": "aardvark"},
+    ]
+    assert result["entity"]["title"] == "Aadvark"
+
+
+def test_add_id_json_forks_its_failures_into_the_error_envelope(isolatedHome, capsys):
+    """*a script filter cannot raise, so a bad category has to arrive as an object*"""
+    import json as jsonModule
+
+    _seededSystem(isolatedHome, capsys)
+
+    with pytest.raises(SystemExit) as excInfo:
+        cl_utils.main(docopt(doc, ["add_id", "A99", "Podiatrist", "feet", "--json"]))
+
+    captured = capsys.readouterr()
+    assert excInfo.value.code == 1
+    assert jsonModule.loads(captured.out)["error"]["kind"] == "value_error"
+
+
+def test_add_id_json_never_prompts_even_from_a_real_terminal(
+    isolatedHome, monkeypatch, capsys,
+):
+    """
+    *`--json` promises it never prompts, and a tty is not what makes that true*
+
+    Alfred's subprocess has no terminal, so inferring it from `isatty`
+    happens to work there and blocks forever for anyone running `--json`
+    from a real shell.
+    """
+    import json as jsonModule
+
+    _seededSystem(isolatedHome, capsys)
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+
+    def refuse(prompt=""):
+        raise AssertionError("`--json` must never prompt")
+
+    monkeypatch.setattr("builtins.input", refuse)
+
+    cl_utils.main(docopt(doc, ["add_id", "A11", "Aadvark", "notes", "--json"]))
+    result = jsonModule.loads(capsys.readouterr().out)["result"]
+
+    assert result["entity"]["title"] == "Aadvark"
+    assert result["corrections"] == []
+    assert result["suggestions"] == [
+        {"token": "Aadvark", "index": 0, "suggested": "aardvark"},
+    ]

@@ -75,7 +75,7 @@ def test_an_archived_id_drops_out_of_search(seeded):
 def test_the_freed_id_number_is_handed_to_the_next_id(seeded):
     conn, _rootPath, settings = seeded
     archive(log=log, dbConn=conn, ref="A11.10", settings=settings).get()
-    code, _folderPath = add_id(
+    code, _folderPath, _details = add_id(
         log=log, dbConn=conn, domain="areas", categoryRef="A11", title="Podiatrist", description="d5"
     ).get()
     assert code == "A11.10"

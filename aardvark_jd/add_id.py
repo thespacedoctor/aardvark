@@ -24,18 +24,21 @@ class add_id(object):
     - ``categoryRef`` -- the parent category reference, e.g. `"A11"`
     - ``title`` -- the ID's title
     - ``description`` -- the ID's description
+    - ``settings`` -- the aardvark settings dict. Default `None`.
+    - ``interactive`` -- may the spell-check prompt? Default `None`, meaning "ask if stdin is a terminal". `--json` passes `False`.
 
     **Usage:**
 
     ```python
     from aardvark_jd.add_id import add_id
-    code, folderPath = add_id(
+    code, folderPath, details = add_id(
         log=log, dbConn=dbConn, domain="areas", categoryRef="A11", title="Cardiologist", description="..."
     ).get()
     ```
     """
 
-    def __init__(self, log, dbConn, domain, categoryRef, title, description, settings=None):
+    def __init__(self, log, dbConn, domain, categoryRef, title, description, settings=None,
+                 interactive=None):
         self.log = log
         self.dbConn = dbConn
         self.domain = codes.validate_domain(domain)
@@ -43,6 +46,7 @@ class add_id(object):
         self.title = title
         self.description = description
         self.settings = settings
+        self.interactive = interactive
 
     def get(self):
         """
@@ -52,6 +56,7 @@ class add_id(object):
 
         - ``code`` -- the new ID's Johnny Decimal code, e.g. `A.11.01`
         - ``folderPath`` -- the new ID folder's absolute path
+        - ``details`` -- what the JSON contract reports about the spell-check: `corrections` applied and `suggestions` still outstanding
         """
         self.log.debug("starting the ``get`` method")
 
@@ -61,7 +66,10 @@ class add_id(object):
             raise ValueError(f"no category '{self.categoryRef}' found in domain '{self.domain}'")
 
         # SEE `add_area.get` - CHECKED BEFORE ANY WRITE.
-        title = spell_check.checked_title(self.title, self.settings, self.log)
+        details = spell_check.checked_title_details(
+            self.title, self.settings, self.log, interactive=self.interactive,
+        )
+        title = details["title"]
         itemNumber = folders.next_id_number(self.dbConn, self.domain, category)
         folderName = folders.id_folder_name(self.domain, acNumber, itemNumber, title)
         folderPath = folders.make_folder(category["folder_path"], folderName)
@@ -73,4 +81,10 @@ class add_id(object):
         code = codes.format_id_code(self.domain, acNumber, itemNumber)
 
         self.log.debug("completed the ``get`` method")
-        return code, folderPath
+        # THE WHOLE OUTCOME COMES BACK THROUGH THE RETURN. NOTHING IS LEFT ON
+        # THE WORKER TO BE READ AFTERWARDS, WHICH WOULD SPLIT THE CONTRACT IN
+        # TWO AND MAKE THE CALL ORDER LOAD-BEARING.
+        return code, folderPath, {
+            "corrections": details["corrections"],
+            "suggestions": details["suggestions"],
+        }

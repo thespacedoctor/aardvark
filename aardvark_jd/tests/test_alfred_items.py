@@ -56,7 +56,10 @@ def test_one_item_per_entity_in_the_contracts_own_order():
     payload = items.script_filter_payload(_contract([first, second]))
 
     # ASSERT
-    assert [item["uid"] for item in payload["items"]] == ["areas:A11.10", "areas:A11.11"]
+    # THE COMMAND ROWS TRAIL THE ENTITIES AND CARRY NO `uid`.
+    assert [
+        item["uid"] for item in payload["items"] if "uid" in item
+    ] == ["areas:A11.10", "areas:A11.11"]
 
 
 def test_title_uses_the_workflows_own_fallback_when_the_emoji_is_blank():
@@ -124,7 +127,7 @@ def test_the_script_filter_caches_with_a_loose_reload():
 
 def test_a_version_mismatch_prepends_a_warning_row_and_keeps_the_entities():
     payload = items.script_filter_payload(_contract(), workflowVersion="0.9.0")
-    assert len(payload["items"]) == 2
+    assert len(payload["items"]) == 3
     assert "out of step" in payload["items"][0]["title"]
     assert "0.9.0" in payload["items"][0]["subtitle"]
     assert "1.2.3" in payload["items"][0]["subtitle"]
@@ -133,7 +136,8 @@ def test_a_version_mismatch_prepends_a_warning_row_and_keeps_the_entities():
 
 def test_a_matching_version_adds_no_warning_row():
     payload = items.script_filter_payload(_contract(), workflowVersion="1.2.3")
-    assert len(payload["items"]) == 1
+    assert len(payload["items"]) == 2
+    assert not any("out of step" in item["title"] for item in payload["items"])
 
 
 def test_an_unrecognised_contract_version_is_one_actionable_error_row():
@@ -247,3 +251,144 @@ def test_a_sibling_of_the_root_sharing_its_prefix_keeps_its_absolute_path():
 def test_a_folder_outside_the_root_entirely_keeps_its_absolute_path():
     payload = items.script_filter_payload(_contract([_entity(folder_path="/somewhere/else")]))
     assert payload["items"][0]["subtitle"] == "/somewhere/else"
+
+
+# ------------------------------------------------------------- command rows
+
+def test_the_command_rows_share_the_one_list_with_the_entities():
+    """
+    *"Alfred Filters Results" runs the Script Filter once, with an empty query*
+
+    There is no second pass to add rows in, so a command row and an
+    entity row have to be emitted together or not at all.
+    """
+    payload = items.script_filter_payload({
+        "aardvark_json": 1,
+        "system": {"root_path": "/root", "version": "0.3.1"},
+        "entities": [],
+    })
+
+    assert [row["title"] for row in payload["items"]] == ["add_id"]
+
+
+def test_a_command_row_says_it_starts_a_flow_rather_than_opening_anything():
+    payload = items.script_filter_payload({
+        "aardvark_json": 1, "system": {"root_path": "/root"}, "entities": [],
+    })
+    row = payload["items"][0]
+
+    assert row["valid"] is True
+    assert row["variables"]["action"] == "command"
+    assert row["variables"]["command"] == "add_id"
+
+
+def test_a_command_row_matches_on_more_than_its_own_name():
+    """*`av new` and `av id` both have to find it, since neither is its name*"""
+    payload = items.script_filter_payload({
+        "aardvark_json": 1, "system": {"root_path": "/root"}, "entities": [],
+    })
+
+    assert "new" in payload["items"][0]["match"]
+
+
+def test_the_entities_come_before_the_command_rows():
+    payload = items.script_filter_payload({
+        "aardvark_json": 1,
+        "system": {"root_path": "/root"},
+        "entities": [{
+            "id": "areas:A11.10", "code": "A11.10", "type": "id", "domain": "areas",
+            "title": "Cardiologist", "description": "", "emoji": None,
+            "folder_path": "/root/A11.10_cardiologist", "archived": False,
+            "row_key": 1, "urls": {},
+        }],
+    })
+
+    assert payload["items"][0]["title"] != "add_id"
+    assert payload["items"][-1]["title"] == "add_id"
+
+
+# --------------------------------------------------------- the reference pick
+
+def _mixedContract():
+    return {
+        "aardvark_json": json_output.AARDVARK_JSON_VERSION,
+        "system": {"root_path": "/root", "version": "1.2.3"},
+        "entities": [
+            _entity(id="areas:A10-19", code="A10-19", type="area", title="Health"),
+            _entity(id="areas:A11", code="A11", type="category", title="Doctors"),
+            _entity(id="areas:A11.10", code="A11.10", type="id", title="Cardiologist"),
+        ],
+    }
+
+
+def test_the_reference_pick_lists_only_the_valid_parents():
+    """*`add_id` hangs an ID off a category, so an area or another ID is not a choice*"""
+    payload = items.reference_payload(_mixedContract(), "category")
+
+    assert [item["arg"] for item in payload["items"]] == ["A11"]
+
+
+def test_the_reference_pick_hands_on_the_code_the_command_takes():
+    payload = items.reference_payload(_mixedContract(), "category")
+
+    assert payload["items"][0]["arg"] == "A11"
+    assert payload["items"][0]["variables"]["category"] == "A11"
+
+
+def test_the_reference_pick_says_so_when_there_is_nothing_to_pick():
+    """*a script filter cannot raise, so an empty parent list is a row too*"""
+    contract = _mixedContract()
+    contract["entities"] = [_entity(type="area")]
+
+    payload = items.reference_payload(contract, "category")
+
+    assert len(payload["items"]) == 1
+    assert payload["items"][0]["valid"] is False
+    assert "category" in payload["items"][0]["title"]
+
+
+def test_the_reference_pick_forwards_a_contract_error_untouched():
+    contract = {
+        "aardvark_json": json_output.AARDVARK_JSON_VERSION,
+        "error": {"kind": "no_system", "message": "no aardvark system found"},
+    }
+
+    payload = items.reference_payload(contract, "category")
+
+    assert payload["items"][0]["title"] == "no aardvark system found"
+    assert payload["items"][0]["valid"] is False
+
+
+def test_the_reference_pick_carries_the_root_path_forward():
+    """
+    *the later steps need it and must not shell out again to get it*
+
+    The confirmation screen filters its suggestions through the learned
+    vocabulary, which lives under the system root. Fetching the whole
+    index a second time to learn one path would cost 240 ms per step.
+    """
+    payload = items.reference_payload(_mixedContract(), "category")
+
+    assert payload["items"][0]["variables"]["root_path"] == "/root"
+
+
+def test_a_reference_row_carries_no_leftovers_from_the_entity_list():
+    """
+    *a category pick is not an entity row, and must not inherit its keys*
+
+    `mods` would offer "Reveal the folder in Finder" over a row whose
+    only job is to name a parent; `uid` and `skipknowledge` belong to
+    Alfred's learning on a different surface entirely.
+    """
+    row = items.reference_payload(_mixedContract(), "category")["items"][0]
+
+    assert "mods" not in row
+    assert "uid" not in row
+    assert "skipknowledge" not in row
+
+
+def test_a_reference_row_still_shows_and_matches_what_the_entity_row_does():
+    row = items.reference_payload(_mixedContract(), "category")["items"][0]
+
+    assert "A11" in row["title"] and "Doctors" in row["title"]
+    assert "Doctors" in row["match"]

@@ -29,7 +29,7 @@ def seeded(tmp_path):
              chosenEmoji="🏥").get()
     add_category(log=log, dbConn=conn, domain="areas", areaRef="A10", title="Doctors", description="d2",
                  chosenEmoji="🩺").get()
-    _code, idFolderPath = add_id(
+    _code, idFolderPath, _details = add_id(
         log=log, dbConn=conn, domain="areas", categoryRef="A11", title="Cardiologist", description="d3"
     ).get()
     settings = {"system": {"name": "Test", "root_path": rootPath}}

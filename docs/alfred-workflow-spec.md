@@ -119,6 +119,8 @@ The step shows the parse and nothing else — two lines, `title = «…»` and `
 
 A **first row returns to the reference pick**. Not a key: Alfred's Escape discards the run rather than stepping back, and a chord hint in the subtitle would compete with the parse the same subtitle is showing. A row is visible without being read and costs nothing when unused.
 
+**Accepted divergence, recorded during slice 2:** the back row leads *only while the field is empty*. Taken unconditionally, "first row" makes Return discard what the user has just typed, which is a worse trap than the one the row exists to avoid. Once anything is typed the parse takes the top row and the back row sits below it — still visible without being read, which is the property the decision rested on.
+
 **Emoji.** Only for `add_area`, `add_category` and `set_emoji`. IDs are never emoji-suffixed, so `add_id` and `add_project` have no emoji step.
 
 The step shows `emoji_picker.pick_emoji`'s offline result as the default and lets the user accept it or enter one manually, via Alfred's own emoji picker or a free-text search over the emoji index. There is no network call and nothing to fail: the Claude suggester was removed from the CLI entirely ([ADR 0002](adr/0002-drop-the-claude-emoji-suggester.md)).

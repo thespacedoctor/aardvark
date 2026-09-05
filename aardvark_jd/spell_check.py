@@ -205,7 +205,62 @@ def suggest(token):
     return min(candidates, key=lambda word: (-len(word), word))
 
 
-def _apply_case(original, replacement):
+def detect(title, rootPath=None, settings=None, log=None):
+    """
+    *the suspect tokens in a title, without prompting about any of them*
+
+    The non-prompting half of `check_title`, for callers that render the
+    offers themselves rather than asking at a terminal - the `--json`
+    contract and, through it, the Alfred confirmation screen. It applies
+    the same three filters the prompt path does (the off switch, the
+    learned vocabulary, one entry per distinct token) and then stops,
+    changing nothing.
+
+    A caller that renders these has *offered* nothing yet, which is why
+    the contract keeps them apart from `corrections`: those are
+    substitutions already applied to the title.
+
+    **Key Arguments:**
+
+    - ``title`` -- the title as the user typed it
+    - ``rootPath`` -- the aardvark system root, for the learned vocabulary. Default `None`, meaning no filtering.
+    - ``settings`` -- the aardvark settings dict. Default `None`.
+    - ``log`` -- logger. Default `None`.
+
+    **Return:**
+
+    - ``suggestions`` -- one `{token, index, suggested}` dict per suspect token, in title order
+
+    **Usage:**
+
+    ```python
+    from aardvark_jd import spell_check
+    suggestions = spell_check.detect("Cardilogist notes", rootPath=rootPath, settings=settings)
+    ```
+    """
+    if not title or not enabled(settings):
+        return []
+
+    known = vocabulary.load(rootPath, log=log) if rootPath else frozenset()
+    suggestions = []
+    seen = set()
+
+    for index, token in enumerate(tokenise(title)):
+        lowered = token.lower()
+        if lowered in known or lowered in seen:
+            continue
+        suggestion = suggest(token)
+        if not suggestion:
+            continue
+        # THE FIRST POSITION, NOT EVERY ONE. THE DECISION IS ABOUT THE WORD,
+        # AND ACCEPTING A CORRECTION REPLACES EVERY OCCURRENCE OF IT.
+        seen.add(lowered)
+        suggestions.append({"token": token, "index": index, "suggested": suggestion})
+
+    return suggestions
+
+
+def cased_suggestion(original, replacement):
     """
     *carry the original token's capitalisation onto its replacement*
 
@@ -249,6 +304,41 @@ def _replace_token(title, token, replacement):
     )
 
 
+def substituted_title(title, token, suggested):
+    """
+    *accept one suggestion, without asking about it*
+
+    The substitution half of the prompt path, for callers that collected
+    the answer in their own UI - the Alfred confirmation screen's
+    correction rows. It carries the typed capitalisation onto the
+    lowercase dictionary word and replaces **every** occurrence, because
+    the decision is about the word rather than the position.
+
+    **Key Arguments:**
+
+    - ``title`` -- the title to substitute into
+    - ``token`` -- the suspect token, as the user typed it
+    - ``suggested`` -- the lowercase dictionary word to put there
+
+    **Return:**
+
+    - ``title`` -- a new title with that token replaced, unchanged if it was not there
+
+    **Usage:**
+
+    ```python
+    from aardvark_jd import spell_check
+    title = spell_check.substituted_title("Aadvark notes", "Aadvark", "aardvark")
+    ```
+    """
+    replacement = cased_suggestion(token, suggested)
+    while True:
+        replaced = _replace_token(title, token, replacement)
+        if replaced == title:
+            return title
+        title = replaced
+
+
 def check_title(title, rootPath=None, settings=None, log=None):
     """
     *offer a correction for each suspect token, and return the title to actually use*
@@ -284,11 +374,42 @@ def check_title(title, rootPath=None, settings=None, log=None):
     title = spell_check.check_title("Aadvark notes", rootPath=rootPath, settings=settings)
     ```
     """
+    return _check_title(title, rootPath=rootPath, settings=settings, log=log)[0]
+
+
+def _check_title(title, rootPath=None, settings=None, log=None, interactive=None):
+    """
+    *`check_title`'s engine, reporting the substitutions it made as well as the title*
+
+    Split out because the mutating commands have to tell the caller
+    **what** was changed, not only that something was, and duplicating a
+    prompt loop to do it would be two loops to keep in step.
+
+    **Key Arguments:**
+
+    - ``title`` -- the title as the user typed it
+    - ``rootPath`` -- the aardvark system root, for the learned vocabulary. Default `None`.
+    - ``settings`` -- the aardvark settings dict. Default `None`.
+    - ``log`` -- logger. Default `None`.
+    - ``interactive`` -- may this prompt? Default `None`, meaning "ask if stdin is a terminal".
+
+    **Return:**
+
+    - ``title`` -- the corrected title
+    - ``corrections`` -- one `{"from", "to"}` dict per substitution actually applied
+    """
+    corrections = []
+
     if not title or not enabled(settings):
-        return title
+        return title, corrections
 
     known = vocabulary.load(rootPath, log=log) if rootPath else frozenset()
-    interactive = sys.stdin.isatty()
+    # A CALLER THAT PROMISES NEVER TO PROMPT - `--json` - SAYS SO, RATHER THAN
+    # BEING INFERRED FROM THE AMBIENT TTY. THE INFERENCE HOLDS FOR ALFRED,
+    # WHOSE SUBPROCESS HAS NO TERMINAL, AND BLOCKS FOREVER FOR ANYONE RUNNING
+    # `--json` FROM A REAL ONE.
+    if interactive is None:
+        interactive = sys.stdin.isatty()
     # A TITLE CAN REPEAT A TOKEN. ONE DECISION COVERS EVERY OCCURRENCE OF IT -
     # ASKING TWICE ABOUT THE SAME WORD IN ONE TITLE WOULD BE ABSURD, AND THE
     # FIRST DECLINE HAS ALREADY LEARNED IT ANYWAY.
@@ -310,7 +431,7 @@ def check_title(title, rootPath=None, settings=None, log=None):
             )
             continue
 
-        corrected = _apply_case(token, suggestion)
+        corrected = cased_suggestion(token, suggestion)
         try:
             reply = input(f"'{token}' - did you mean '{corrected}'? [y/N] ")
         except EOFError:
@@ -321,20 +442,16 @@ def check_title(title, rootPath=None, settings=None, log=None):
             break
 
         if reply.strip().lower() in ("y", "yes"):
-            # EVERY OCCURRENCE, NOT JUST THE FIRST: THE DECISION IS ABOUT THE
-            # WORD, AND `_replace_token` TAKES THE NEXT ONE STILL MISSPELLED.
-            while True:
-                replaced = _replace_token(title, token, corrected)
-                if replaced == title:
-                    break
-                title = replaced
+            title = substituted_title(title, token, suggestion)
+            # ONE ENTRY PER DECISION, NOT PER OCCURRENCE, MATCHING THE PROMPT.
+            corrections.append({"from": token, "to": corrected})
         elif rootPath:
             # DECLINING TEACHES IT THE WORD. THIS IS THE WHOLE REASON THE
             # FEATURE IS TOLERABLE: WHAT IT FLAGS ON A REAL TREE IS MOSTLY
             # PROPER NOUNS, AND EACH IS RETIRED BY ONE DISMISSAL.
             vocabulary.remember(rootPath, token, log=log)
 
-    return title
+    return title, corrections
 
 
 def checked_title(rawTitle, settings=None, log=None):
@@ -354,5 +471,50 @@ def checked_title(rawTitle, settings=None, log=None):
 
     - ``title`` -- the title to actually use
     """
+    return checked_title_details(rawTitle, settings=settings, log=log)["title"]
+
+
+def checked_title_details(rawTitle, settings=None, log=None, interactive=None):
+    """
+    *the title to build a new entity from, and everything the caller has to report about it*
+
+    What `checked_title` returns, plus the two fields the JSON contract
+    carries and keeps strictly apart:
+
+    - ``corrections`` -- substitutions **applied**, empty when the check
+      was skipped, declined or never prompted at all
+    - ``suggestions`` -- suspect tokens **offered and not accepted**,
+      detected on the title actually being used
+
+    A headless run is exactly the case the second field exists for: it
+    prompts about nothing and so applies nothing, leaving `corrections`
+    empty in the one run the Alfred confirmation screen needs filled.
+    Detection therefore runs regardless of whether anything was asked.
+
+    **Key Arguments:**
+
+    - ``rawTitle`` -- the title as the user typed it
+    - ``settings`` -- the aardvark settings dict. Default `None`.
+    - ``log`` -- logger. Default `None`.
+    - ``interactive`` -- may this prompt? Default `None`, meaning "ask if stdin is a terminal". `--json` passes `False`, because that promise is the caller's to make and not the terminal's to imply.
+
+    **Return:**
+
+    - ``details`` -- a new `{"title", "corrections", "suggestions"}` dict
+
+    **Usage:**
+
+    ```python
+    from aardvark_jd import spell_check
+    details = spell_check.checked_title_details("Aadvark notes", settings, log)
+    ```
+    """
     rootPath = ((settings or {}).get("system") or {}).get("root_path")
-    return check_title(rawTitle, rootPath=rootPath, settings=settings, log=log)
+    title, corrections = _check_title(
+        rawTitle, rootPath=rootPath, settings=settings, log=log, interactive=interactive,
+    )
+    return {
+        "title": title,
+        "corrections": corrections,
+        "suggestions": detect(title, rootPath=rootPath, settings=settings, log=log),
+    }

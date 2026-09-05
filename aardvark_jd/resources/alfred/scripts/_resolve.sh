@@ -70,3 +70,48 @@ aardvark_resolve() {
     aardvarkResolution="ok"
     return 0
 }
+
+# EMIT ONE ALFRED ITEM AND STOP. `arg` CARRIES THE TEXT ENTER SHOULD COPY TO
+# THE CLIPBOARD; AN INVALID ROW IS INERT. JSON STRING ESCAPING IS DONE BY
+# HAND BECAUSE NOTHING ELSE IS REACHABLE YET - A RECORDED PATH CAN CARRY A
+# BACKSLASH OR A DOUBLE QUOTE, AND BOTH WOULD BREAK THE PAYLOAD ALFRED
+# PARSES.
+aardvark_emit_row() {
+    local rowTitle="$1"
+    local rowSubtitle="$2"
+    local rowArg="$3"
+    local rowValid="$4"
+    rowTitle="${rowTitle//\\/\\\\}"
+    rowTitle="${rowTitle//\"/\\\"}"
+    rowSubtitle="${rowSubtitle//\\/\\\\}"
+    rowSubtitle="${rowSubtitle//\"/\\\"}"
+    rowArg="${rowArg//\\/\\\\}"
+    rowArg="${rowArg//\"/\\\"}"
+    print -r -- "{\"items\":[{\"title\":\"${rowTitle}\",\"subtitle\":\"${rowSubtitle}\",\"arg\":\"${rowArg}\",\"valid\":${rowValid},\"variables\":{\"action\":\"copy\"}}]}"
+    exit 0
+}
+
+# THE THREE RESOLUTION FAILURES AS THE ERROR ROWS THE SPEC'S INVENTORY
+# NAMES. EVERY SCRIPT FILTER IN THIS WORKFLOW REPORTS THEM IDENTICALLY, SO
+# THEY ARE WRITTEN ONCE HERE RATHER THAN ONCE PER ENTRY POINT.
+aardvark_emit_resolution_failure() {
+    case "$aardvarkResolution" in
+        missing)
+            aardvark_emit_row "aardvark has not been set up on this Mac" \
+                "Press ↩ to copy \`${AARDVARK_INSTALL_COMMAND}\`, then run it in a terminal" \
+                "$AARDVARK_INSTALL_COMMAND" "true"
+            ;;
+        dead)
+            # THE DEAD PATH IS SHOWN, NOT SWALLOWED: A RECORDED-BUT-WRONG
+            # PATH IS THE SILENT FAILURE THIS WHOLE DESIGN GUARDS AGAINST.
+            aardvark_emit_row "aardvark is not at ${aardvarkBinary}" \
+                "Recorded by the ${aardvarkSource}. Press ↩ to copy \`${AARDVARK_INSTALL_COMMAND}\`, then run it in a terminal" \
+                "$AARDVARK_INSTALL_COMMAND" "true"
+            ;;
+        *)
+            aardvark_emit_row "aardvark's interpreter could not be found" \
+                "No usable shebang in ${aardvarkBinary}. Press ↩ to copy \`${AARDVARK_INSTALL_COMMAND}\`" \
+                "$AARDVARK_INSTALL_COMMAND" "true"
+            ;;
+    esac
+}

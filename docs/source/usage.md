@@ -6,7 +6,7 @@
         aardvark init <systemName> <parentPath> [-s <pathToSettingsFile>]
         aardvark add_area <domainLetter> <title> <description> [-e <emoji>] [-w] [-s <pathToSettingsFile>]
         aardvark add_category <area> <title> <description> [-e <emoji>] [-w] [-s <pathToSettingsFile>]
-        aardvark add_id <category> <title> <description> [-w] [-s <pathToSettingsFile>]
+        aardvark add_id <category> <title> <description> [--json] [-w] [-s <pathToSettingsFile>]
         aardvark add_project <category> <projectTitle> [-t <templateName>] [-w] [-s <pathToSettingsFile>]
         aardvark archive <ref> [-y] [-w] [-s <pathToSettingsFile>]
         aardvark fd [<term>...] [--json] [--archived] [-s <pathToSettingsFile>]
