@@ -649,6 +649,11 @@ def test_fd_on_a_category_ref_prints_the_emoji_in_the_tree(isolatedHome, capsys)
     "open --json",
     "open /some/path --json",
     "add_id A11 Cardiologist heart --json",
+    "add_area A Health body --json",
+    "add_category A10-19 Doctors clinicians --json",
+    "add_project P11 Website --json",
+    "archive A11.10 --json",
+    "set_emoji A10-19 X --json",
 ])
 def test_docopt_accepts_the_json_flag_where_the_contract_defines_it(command):
     args = docopt(doc, command.split(" "))
@@ -1004,3 +1009,180 @@ def test_add_id_json_never_prompts_even_from_a_real_terminal(
     assert result["suggestions"] == [
         {"token": "Aadvark", "index": 0, "suggested": "aardvark"},
     ]
+
+
+# ------------------------------------------ slice 3: the rest of the mutating set
+
+
+def _projectCategory(isolatedHome, capsys):
+    """*add a `projects` area and category to a system already seeded by `_seededSystem`*"""
+    cl_utils.main(docopt(doc, ["add_area", "P", "Launches", "shipping things"]))
+    cl_utils.main(docopt(doc, ["add_category", "P10-19", "Website", "the site"]))
+    capsys.readouterr()
+
+
+def test_add_area_json_returns_the_uniform_mutating_result(isolatedHome, capsys):
+    import json as jsonModule
+
+    _seededSystem(isolatedHome, capsys)
+
+    cl_utils.main(docopt(doc, ["add_area", "P", "Cycling", "road bikes", "--json"]))
+    result = jsonModule.loads(capsys.readouterr().out)["result"]
+
+    assert result["action"] == "add_area"
+    assert result["entity"]["type"] == "area"
+    assert result["entity"]["code"] == "P10-19"
+    assert result["entity"]["title"] == "Cycling"
+    assert result["emoji_source"] in ("offline", "chosen")
+    assert result["corrections"] == []
+    assert result["suggestions"] == []
+    assert result["sync"] == "none"
+    assert result["warnings"] == []
+    assert "template_used" not in result
+
+
+def test_add_area_json_labels_a_supplied_emoji_chosen(isolatedHome, capsys):
+    import json as jsonModule
+
+    _seededSystem(isolatedHome, capsys)
+
+    cl_utils.main(docopt(doc, ["add_area", "P", "Cycling", "road bikes", "-e", "🚲", "--json"]))
+    result = jsonModule.loads(capsys.readouterr().out)["result"]
+
+    assert result["emoji_source"] == "chosen"
+    assert result["entity"]["emoji"] == "🚲"
+
+
+def test_add_category_json_returns_the_uniform_mutating_result(isolatedHome, capsys):
+    import json as jsonModule
+
+    _seededSystem(isolatedHome, capsys)
+
+    cl_utils.main(docopt(doc, ["add_category", "A10-19", "Physio", "physical therapy", "--json"]))
+    result = jsonModule.loads(capsys.readouterr().out)["result"]
+
+    assert result["action"] == "add_category"
+    assert result["entity"]["type"] == "category"
+    assert result["entity"]["code"] == "A12"
+    assert result["emoji_source"] in ("offline", "chosen")
+    assert result["corrections"] == []
+    assert result["suggestions"] == []
+
+
+def test_add_category_json_reports_a_suspect_token_it_never_prompted_about(isolatedHome, capsys):
+    import json as jsonModule
+
+    _seededSystem(isolatedHome, capsys)
+
+    cl_utils.main(docopt(doc, ["add_category", "A10-19", "Aadvark", "notes", "--json"]))
+    result = jsonModule.loads(capsys.readouterr().out)["result"]
+
+    assert result["corrections"] == []
+    assert result["suggestions"] == [{"token": "Aadvark", "index": 0, "suggested": "aardvark"}]
+    assert result["entity"]["title"] == "Aadvark"
+
+
+def test_add_project_json_returns_the_uniform_mutating_result(isolatedHome, capsys):
+    import json as jsonModule
+
+    _seededSystem(isolatedHome, capsys)
+    _projectCategory(isolatedHome, capsys)
+
+    cl_utils.main(docopt(doc, ["add_project", "P11", "Relaunch", "--json"]))
+    result = jsonModule.loads(capsys.readouterr().out)["result"]
+
+    assert result["action"] == "add_project"
+    assert result["entity"]["type"] == "id"
+    assert result["entity"]["domain"] == "projects"
+    assert result["entity"]["title"] == "Relaunch"
+    assert result["template_used"] == "blank"
+    assert result["corrections"] == []
+    assert result["suggestions"] == []
+    assert "emoji_source" not in result
+
+
+def test_add_project_json_takes_only_a_title_no_comma_split(isolatedHome, capsys):
+    """*`add_project`'s docopt line is `<category> <projectTitle>` - one positional*"""
+    import json as jsonModule
+
+    _seededSystem(isolatedHome, capsys)
+    _projectCategory(isolatedHome, capsys)
+
+    cl_utils.main(docopt(doc, ["add_project", "P11", "Relaunch, the big one", "--json"]))
+    entity = jsonModule.loads(capsys.readouterr().out)["result"]["entity"]
+
+    assert entity["title"] == "Relaunch, the big one"
+
+
+def test_set_emoji_json_returns_the_renamed_entity_and_the_source(isolatedHome, capsys):
+    import json as jsonModule
+
+    _seededSystem(isolatedHome, capsys)
+
+    cl_utils.main(docopt(doc, ["set_emoji", "A10-19", "🩺", "--json"]))
+    result = jsonModule.loads(capsys.readouterr().out)["result"]
+
+    assert result["action"] == "set_emoji"
+    assert result["entity"]["code"] == "A10-19"
+    assert result["entity"]["emoji"] == "🩺"
+    assert result["entity"]["folder_path"].endswith("🩺")
+    assert result["emoji_source"] == "chosen"
+    assert "corrections" not in result
+
+
+def test_set_emoji_json_on_a_system_folder_is_an_error_envelope(isolatedHome, capsys):
+    """*the contract's entity record only describes areas, categories and IDs*"""
+    import json as jsonModule
+
+    _seededSystem(isolatedHome, capsys)
+
+    with pytest.raises(SystemExit) as excInfo:
+        cl_utils.main(docopt(doc, ["set_emoji", "root.areas", "📚", "--json"]))
+
+    captured = capsys.readouterr()
+    assert excInfo.value.code == 1
+    assert jsonModule.loads(captured.out)["error"]["kind"] == "value_error"
+
+
+def test_archive_json_describes_the_archived_entity(isolatedHome, capsys):
+    import json as jsonModule
+
+    _seededSystem(isolatedHome, capsys)
+
+    cl_utils.main(docopt(doc, ["archive", "A11.11", "--json"]))
+    result = jsonModule.loads(capsys.readouterr().out)["result"]
+
+    assert result["action"] == "archive"
+    assert result["entity"]["code"] == "A11.11"
+    assert result["entity"]["archived"] is True
+    assert result["entity"]["urls"]["finder"] is None
+    assert result["sync"] == "none"
+    assert result["warnings"] == []
+
+
+def test_archive_json_never_prompts_and_prints_only_the_object(isolatedHome, monkeypatch, capsys):
+    import json as jsonModule
+
+    _seededSystem(isolatedHome, capsys)
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    monkeypatch.setattr(
+        "builtins.input", lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not prompt")),
+    )
+
+    cl_utils.main(docopt(doc, ["archive", "A11.11", "--json"]))
+    captured = capsys.readouterr()
+
+    jsonModule.loads(captured.out)
+    assert "archived A11.11" not in captured.out
+
+
+def test_a_mutating_json_command_prints_the_object_and_no_prose(isolatedHome, capsys):
+    import json as jsonModule
+
+    _seededSystem(isolatedHome, capsys)
+
+    cl_utils.main(docopt(doc, ["add_area", "P", "Cycling", "road bikes", "--json"]))
+    captured = capsys.readouterr()
+
+    jsonModule.loads(captured.out)
+    assert "P10-19  " not in captured.out

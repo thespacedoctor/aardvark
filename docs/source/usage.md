@@ -4,15 +4,15 @@
 
     Usage:
         aardvark init <systemName> <parentPath> [-s <pathToSettingsFile>]
-        aardvark add_area <domainLetter> <title> <description> [-e <emoji>] [-w] [-s <pathToSettingsFile>]
-        aardvark add_category <area> <title> <description> [-e <emoji>] [-w] [-s <pathToSettingsFile>]
+        aardvark add_area <domainLetter> <title> <description> [-e <emoji>] [--json] [-w] [-s <pathToSettingsFile>]
+        aardvark add_category <area> <title> <description> [-e <emoji>] [--json] [-w] [-s <pathToSettingsFile>]
         aardvark add_id <category> <title> <description> [--json] [-w] [-s <pathToSettingsFile>]
-        aardvark add_project <category> <projectTitle> [-t <templateName>] [-w] [-s <pathToSettingsFile>]
-        aardvark archive <ref> [-y] [-w] [-s <pathToSettingsFile>]
+        aardvark add_project <category> <projectTitle> [-t <templateName>] [--json] [-w] [-s <pathToSettingsFile>]
+        aardvark archive <ref> [-y] [--json] [-w] [-s <pathToSettingsFile>]
         aardvark fd [<term>...] [--json] [--archived] [-s <pathToSettingsFile>]
         aardvark cd <target> [-s <pathToSettingsFile>]
         aardvark open [<path>] [--json] [-s <pathToSettingsFile>]
-        aardvark set_emoji <ref> <emoji> [-w] [-s <pathToSettingsFile>]
+        aardvark set_emoji <ref> <emoji> [--json] [-w] [-s <pathToSettingsFile>]
         aardvark repair_emoji [-w] [-s <pathToSettingsFile>]
         aardvark install_alfred [--uninstall] [-s <pathToSettingsFile>]
         aardvark completion <shell>

@@ -27,15 +27,15 @@ def dbConn(tmp_path):
 
 @pytest.mark.parametrize("domain,letter", [("areas", "A"), ("resources", "R"), ("projects", "P")])
 def test_add_area_happy_path(dbConn, domain, letter):
-    code, folderPath = add_area(log=log, dbConn=dbConn, domain=domain, title="Health", description="desc").get()
+    code, folderPath, _ = add_area(log=log, dbConn=dbConn, domain=domain, title="Health", description="desc").get()
     assert code == f"{letter}10-19"
     assert f"{letter}10_19_health" in folderPath
     assert os.path.isdir(folderPath)
 
 
 def test_add_area_domains_are_independent(dbConn):
-    codeAreas, _ = add_area(log=log, dbConn=dbConn, domain="areas", title="Health", description="").get()
-    codeResources, _ = add_area(log=log, dbConn=dbConn, domain="resources", title="Health", description="").get()
+    codeAreas, _, _ = add_area(log=log, dbConn=dbConn, domain="areas", title="Health", description="").get()
+    codeResources, _, _ = add_area(log=log, dbConn=dbConn, domain="resources", title="Health", description="").get()
     assert codeAreas == "A10-19"
     assert codeResources == "R10-19"
 
@@ -53,7 +53,7 @@ def test_add_area_invalid_domain(dbConn):
 
 
 def test_add_area_creates_its_reserved_system_folder(dbConn):
-    _code, folderPath = add_area(log=log, dbConn=dbConn, domain="areas", title="Health", description="").get()
+    _code, folderPath, _ = add_area(log=log, dbConn=dbConn, domain="areas", title="Health", description="").get()
 
     systemFolderPath = f"{folderPath}/A10_system⚙️"
     assert os.path.isdir(systemFolderPath)
@@ -65,7 +65,7 @@ def test_add_area_creates_its_reserved_system_folder(dbConn):
 
 def test_add_area_creates_its_own_ten_reserved_ids(dbConn):
     """*the area's reserved system folder (occupying the X0 slot) gets its own .00-.09 IDs too*"""
-    _code, folderPath = add_area(log=log, dbConn=dbConn, domain="areas", title="Health", description="").get()
+    _code, folderPath, _ = add_area(log=log, dbConn=dbConn, domain="areas", title="Health", description="").get()
     systemFolderPath = f"{folderPath}/A10_system⚙️"
 
     expectedNames = [
@@ -93,7 +93,7 @@ def test_an_accepted_correction_reaches_the_folder_name_and_the_index(dbConn, tm
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     monkeypatch.setattr("builtins.input", lambda prompt="": "y")
 
-    code, folderPath = add_area(
+    code, folderPath, _ = add_area(
         log=log, dbConn=dbConn, domain="areas", title="Aadvark", description="d",
         chosenEmoji="🐾", settings={"system": {"root_path": rootPath}},
     ).get()
@@ -112,10 +112,41 @@ def test_a_declined_correction_leaves_the_title_as_typed_and_is_remembered(dbCon
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     monkeypatch.setattr("builtins.input", lambda prompt="": "n")
 
-    _code, folderPath = add_area(
+    _code, folderPath, _ = add_area(
         log=log, dbConn=dbConn, domain="areas", title="Aadvark", description="d",
         chosenEmoji="🐾", settings={"system": {"root_path": rootPath}},
     ).get()
 
     assert "aadvark" in os.path.basename(folderPath).lower()
     assert "aadvark" in vocabulary.load(rootPath)
+
+
+# ------------------------------------- what the worker reports back to Alfred
+
+
+def test_add_area_details_carry_the_emoji_source_and_the_suspect_tokens(dbConn, monkeypatch):
+    """*`--json` reports the emoji provenance and any suspect token, without prompting*"""
+    import os
+    from aardvark_jd import db as dbModule
+
+    rootPath = os.path.dirname(dbModule.get_system_folder(dbConn, "root.areas")["folder_path"])
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+
+    _code, _folderPath, details = add_area(
+        log=log, dbConn=dbConn, domain="areas", title="Aadvark", description="d",
+        settings={"system": {"root_path": rootPath}}, interactive=False,
+    ).get()
+
+    assert details["corrections"] == []
+    assert details["suggestions"] == [{"token": "Aadvark", "index": 0, "suggested": "aardvark"}]
+    assert details["emoji_source"] == "offline"
+
+
+def test_add_area_details_label_a_supplied_emoji_chosen(dbConn):
+    _code, _folderPath, details = add_area(
+        log=log, dbConn=dbConn, domain="areas", title="Health", description="d", chosenEmoji="🩺",
+    ).get()
+
+    assert details["emoji_source"] == "chosen"
+    assert details["corrections"] == []
+    assert details["suggestions"] == []

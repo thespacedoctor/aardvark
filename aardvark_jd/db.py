@@ -1339,6 +1339,30 @@ def list_archived_entities(dbConn, domain=None):
     ).fetchall()
 
 
+def get_archived_entity_by_path(dbConn, archivedPath):
+    """
+    *the `archived_entities` row for a folder's datestamped archive path*
+
+    `archive` datestamps every archived folder name, so the path stays
+    unique even after a Johnny Decimal number is reused and the new entity
+    archived into the same folder later. Used by the `--json` contract to
+    describe what `archive` just did.
+
+    **Key Arguments:**
+
+    - ``dbConn`` -- an open SQLite connection
+    - ``archivedPath`` -- the folder's absolute path after archiving
+
+    **Return:**
+
+    - ``row`` -- the `archived_entities` row, or `None` if there is no such path
+    """
+    return dbConn.execute(
+        "SELECT * FROM archived_entities WHERE archived_path = ? ORDER BY archive_id DESC LIMIT 1",
+        (archivedPath,),
+    ).fetchone()
+
+
 def delete_area(dbConn, areaId):
     """
     *remove an area from the live index, cascading to its categories and IDs*

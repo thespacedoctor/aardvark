@@ -23,18 +23,20 @@ class add_area(object):
     - ``description`` -- the area's description
     - ``chosenEmoji`` -- an emoji supplied on the command-line, bypassing the suggester. Default `None`.
     - ``settings`` -- the aardvark settings dict. Default `None`.
+    - ``interactive`` -- may the spell-check prompt? Default `None`, meaning "ask if stdin is a terminal". `--json` passes `False`.
 
     **Usage:**
 
     ```python
     from aardvark_jd.add_area import add_area
-    code, folderPath = add_area(
+    code, folderPath, details = add_area(
         log=log, dbConn=dbConn, domain="areas", title="Health", description="..."
     ).get()
     ```
     """
 
-    def __init__(self, log, dbConn, domain, title, description, chosenEmoji=None, settings=None):
+    def __init__(self, log, dbConn, domain, title, description, chosenEmoji=None, settings=None,
+                 interactive=None):
         self.log = log
         self.dbConn = dbConn
         self.domain = codes.validate_domain(domain)
@@ -42,6 +44,7 @@ class add_area(object):
         self.description = description
         self.chosenEmoji = chosenEmoji
         self.settings = settings
+        self.interactive = interactive
 
     def get(self):
         """
@@ -51,6 +54,7 @@ class add_area(object):
 
         - ``code`` -- the new area's Johnny Decimal code, e.g. `A.10-19`
         - ``folderPath`` -- the new area folder's absolute path
+        - ``details`` -- what the JSON contract reports: `corrections` applied, `suggestions` still outstanding, and the `emoji_source`
         """
         self.log.debug("starting the ``get`` method")
 
@@ -58,8 +62,11 @@ class add_area(object):
         # BEFORE THE EMOJI PROMPT: ACCEPTING A CORRECTION CHANGES THE TITLE THE
         # EMOJI IS DERIVED FROM, AND BEFORE ANY WRITE, SO THE CORRECTED TITLE IS
         # THE ONE VALUE THE FOLDER, THE INDEX ROW AND EVERY MIRROR ARE BUILT FROM.
-        title = spell_check.checked_title(self.title, self.settings, self.log)
-        pickedEmoji = emoji_picker.resolve_emoji(
+        details = spell_check.checked_title_details(
+            self.title, self.settings, self.log, interactive=self.interactive,
+        )
+        title = details["title"]
+        pickedEmoji, emojiSource = emoji_picker.resolve_emoji_with_source(
             title, self.description, chosenEmoji=self.chosenEmoji,
         )
         folderName = folders.area_folder_name(self.domain, decadeStart, decadeEnd, title, pickedEmoji)
@@ -75,7 +82,13 @@ class add_area(object):
         self._create_area_system_folder(decadeStart, folderPath)
 
         self.log.debug("completed the ``get`` method")
-        return code, folderPath
+        # SEE `add_id.get` - THE WHOLE OUTCOME COMES BACK THROUGH THE RETURN,
+        # NOTHING IS LEFT ON THE WORKER TO BE READ AFTERWARDS.
+        return code, folderPath, {
+            "corrections": details["corrections"],
+            "suggestions": details["suggestions"],
+            "emoji_source": emojiSource,
+        }
 
     def _create_area_system_folder(self, decadeStart, areaFolderPath):
         """

@@ -28,7 +28,7 @@ def dbConnWithArea(tmp_path):
 
 
 def test_add_category_happy_path(dbConnWithArea):
-    code, folderPath = add_category(
+    code, folderPath, _ = add_category(
         log=log, dbConn=dbConnWithArea, domain="areas", areaRef="A10", title="Doctors", description="desc"
     ).get()
     assert code == "A11"
@@ -46,7 +46,7 @@ def test_add_category_happy_path_projects_domain(tmp_path):
     conn = db.get_connection(paths.find_db_path(rootPath))
     add_area(log=log, dbConn=conn, domain="projects", title="Launches", description="").get()
 
-    code, folderPath = add_category(
+    code, folderPath, _ = add_category(
         log=log, dbConn=conn, domain="projects", areaRef="P10", title="Website", description="desc"
     ).get()
     assert code == "P11"
@@ -56,7 +56,7 @@ def test_add_category_happy_path_projects_domain(tmp_path):
 
 
 def test_add_category_accepts_range_ref(dbConnWithArea):
-    code, _ = add_category(
+    code, _, _ = add_category(
         log=log, dbConn=dbConnWithArea, domain="areas", areaRef="A10-19", title="Doctors", description=""
     ).get()
     assert code == "A11"
@@ -79,7 +79,7 @@ def test_add_category_exhaustion_surfaces_clear_error(dbConnWithArea):
 
 
 def test_add_category_creates_its_ten_reserved_ids(dbConnWithArea):
-    _code, folderPath = add_category(
+    _code, folderPath, _ = add_category(
         log=log, dbConn=dbConnWithArea, domain="areas", areaRef="A10", title="Doctors", description="desc"
     ).get()
 
@@ -101,7 +101,7 @@ def test_an_accepted_correction_reaches_the_category_folder_and_index(dbConnWith
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     monkeypatch.setattr("builtins.input", lambda prompt="": "y")
 
-    _code, folderPath = add_category(
+    _code, folderPath, _ = add_category(
         log=log, dbConn=dbConnWithArea, domain="areas", areaRef="A10", title="Aadvark",
         description="d", chosenEmoji="🐾", settings={"system": {"root_path": rootPath}},
     ).get()
@@ -109,3 +109,23 @@ def test_an_accepted_correction_reaches_the_category_folder_and_index(dbConnWith
     assert "aardvark" in os.path.basename(folderPath).lower()
     row = dbConnWithArea.execute("SELECT title FROM categories WHERE title LIKE 'A%'").fetchone()
     assert row["title"] == "Aardvark"
+
+
+# ------------------------------------- what the worker reports back to Alfred
+
+
+def test_add_category_details_carry_the_emoji_source_and_the_suspect_tokens(dbConnWithArea, monkeypatch):
+    import os
+    from aardvark_jd import db as dbModule
+
+    rootPath = os.path.dirname(dbModule.get_system_folder(dbConnWithArea, "root.areas")["folder_path"])
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+
+    _code, _folderPath, details = add_category(
+        log=log, dbConn=dbConnWithArea, domain="areas", areaRef="A10", title="Aadvark",
+        description="d", settings={"system": {"root_path": rootPath}}, interactive=False,
+    ).get()
+
+    assert details["corrections"] == []
+    assert details["suggestions"] == [{"token": "Aadvark", "index": 0, "suggested": "aardvark"}]
+    assert details["emoji_source"] == "offline"

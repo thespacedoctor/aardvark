@@ -108,7 +108,7 @@ def test_archiving_a_category_clears_its_reserved_scaffolding_rows(seeded):
 def test_a_reused_category_number_gets_its_own_fresh_scaffolding(seeded):
     conn, _rootPath, settings = seeded
     archive(log=log, dbConn=conn, ref="A11", settings=settings).get()
-    code, folderPath = add_category(
+    code, folderPath, _ = add_category(
         log=log, dbConn=conn, domain="areas", areaRef="A10", title="Physio", description="d6"
     ).get()
     assert code == "A11"
@@ -137,7 +137,7 @@ def test_archiving_an_area_records_every_descendant(seeded):
 def test_the_freed_decade_is_handed_to_the_next_area(seeded):
     conn, _rootPath, settings = seeded
     archive(log=log, dbConn=conn, ref="A10-19", settings=settings).get()
-    code, _folderPath = add_area(
+    code, _folderPath, _ = add_area(
         log=log, dbConn=conn, domain="areas", title="Finance", description="d7"
     ).get()
     assert code == "A10-19"

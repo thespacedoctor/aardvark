@@ -189,6 +189,47 @@ def resolve_emoji(title, description="", chosenEmoji=None):
             print(f"  {error}")
 
 
+def resolve_emoji_with_source(title, description="", chosenEmoji=None):
+    """
+    *`resolve_emoji`, plus where the emoji came from, for the JSON contract*
+
+    The mutating result's `emoji_source` field. Two values reach it from
+    the CLI:
+
+    - ``chosen`` -- an emoji was supplied: the `--emoji` flag on the
+      terminal, or the emoji Alfred's own emoji step settled on
+    - ``offline`` -- the offline keyword pick stood, the bare `📁`
+      fallback included
+
+    A third value, ``deferred`` (a folder created with no emoji, to be set
+    later with `set_emoji`), is reserved but never produced here: every
+    `add_*`/`set_emoji` run resolves to some emoji. The source is only
+    read back through `--json`, which never prompts, so the interactive
+    branch of `resolve_emoji` - where a user could type a replacement over
+    the offline pick - is not a case this has to label.
+
+    **Key Arguments:**
+
+    - ``title`` -- the folder's title
+    - ``description`` -- the folder's description. Default `""`.
+    - ``chosenEmoji`` -- an emoji supplied on the command-line. Default `None`.
+
+    **Return:**
+
+    - ``resolvedEmoji`` -- the emoji to append to the folder name
+    - ``source`` -- `"chosen"` or `"offline"`
+
+    **Usage:**
+
+    ```python
+    from aardvark_jd import emoji_picker
+    resolvedEmoji, source = emoji_picker.resolve_emoji_with_source("Doctors", "GP")
+    ```
+    """
+    source = "chosen" if chosenEmoji else "offline"
+    return resolve_emoji(title, description, chosenEmoji=chosenEmoji), source
+
+
 def validate_chosen_emoji(chosenEmoji):
     """
     *check a user-supplied emoji is usable in a folder name*
