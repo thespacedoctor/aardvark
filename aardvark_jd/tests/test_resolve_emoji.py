@@ -163,3 +163,26 @@ def test_non_interactive_worker_takes_the_offline_pick(systemDbConn, nonInteract
         log=log, dbConn=systemDbConn, domain="areas", title="Hospital", description="...",
     ).get()
     assert os.path.basename(folderPath) == "A10_19_hospital🏥"
+
+
+# ------------------------------------------------- the emoji-index free-text search
+
+
+def test_search_emoji_finds_matches_for_a_keyword():
+    matches = emoji_picker.search_emoji("bicycle")
+    assert any(keyword == "bicycle" for _emoji, keyword in matches)
+
+
+def test_search_emoji_prefers_a_prefix_match_over_a_substring_one():
+    matches = emoji_picker.search_emoji("book")
+    assert matches
+    assert matches[0][1].startswith("book")
+
+
+def test_search_emoji_is_empty_for_a_blank_or_symbol_query():
+    assert emoji_picker.search_emoji("") == []
+    assert emoji_picker.search_emoji("   ") == []
+
+
+def test_search_emoji_honours_the_limit():
+    assert len(emoji_picker.search_emoji("a", limit=3)) <= 3

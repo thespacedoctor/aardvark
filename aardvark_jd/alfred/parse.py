@@ -20,6 +20,9 @@ Author
 : David Young
 """
 
+import glob
+import os
+
 SEPARATOR = ","
 
 # THE STEP SHOWS THE PARSE AND NOTHING ELSE - NO JD CODE, WHICH INVITES THE
@@ -74,4 +77,39 @@ def parse_subtitle(parsed):
     """
     return _FIELD_TEMPLATE.format(
         title=parsed.get("title", ""), description=parsed.get("description", ""),
+    )
+
+
+def template_names(categoryFolderPath):
+    """
+    *the `*.zip` template basenames in a project category's reserved templates folder*
+
+    `add_project`'s reference pick carries the category's folder path
+    forward, so the template step finds the templates without a second
+    shell-out or a `db` import. The reserved templates folder is the one
+    `*templates*` child of the category folder (`P11.04_templates📐`).
+    Mirrors `add_project`'s own `sorted(glob(...))` so the two agree on
+    what is offered; a missing or empty folder is an empty list, exactly
+    as `add_project` treats "no templates".
+
+    **Key Arguments:**
+
+    - ``categoryFolderPath`` -- the project category's folder path, or `""`
+
+    **Return:**
+
+    - ``names`` -- the sorted `*.zip` basenames
+
+    **Usage:**
+
+    ```python
+    from aardvark_jd.alfred import parse
+    names = parse.template_names(os.environ.get("folder_path", ""))
+    ```
+    """
+    if not categoryFolderPath:
+        return []
+    return sorted(
+        os.path.basename(path)
+        for path in glob.glob(os.path.join(categoryFolderPath, "*templates*", "*.zip"))
     )

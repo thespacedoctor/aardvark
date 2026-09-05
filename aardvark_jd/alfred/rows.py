@@ -113,7 +113,12 @@ def argument_items(query, backLabel):
     ]
 
 
-def confirmation_items(parsed, suggestions):
+def _emoji_suffix(emoji):
+    """*the ` emoji = «…»` a confirmation subtitle carries when an emoji was chosen, else empty*"""
+    return f"  emoji = «{emoji}»" if emoji else ""
+
+
+def confirmation_items(parsed, suggestions, emoji=None):
     """
     *the confirmation screen: what will be created, and every correction offered against it*
 
@@ -125,6 +130,7 @@ def confirmation_items(parsed, suggestions):
 
     - ``parsed`` -- a `parse.title_and_description` result
     - ``suggestions`` -- the contract's `suggestions` array for that title, or `None`
+    - ``emoji`` -- the emoji settled on the emoji step, for `add_area` and `add_category`. Default `None`, for the commands with no emoji step.
 
     **Return:**
 
@@ -139,14 +145,18 @@ def confirmation_items(parsed, suggestions):
     """
     title = parsed.get("title", "")
     description = parsed.get("description", "")
-    subtitle = parse.parse_subtitle(parsed)
+    subtitle = parse.parse_subtitle(parsed) + _emoji_suffix(emoji)
+
+    createVariables = {"action": "create", "title": title, "description": description}
+    if emoji:
+        createVariables["emoji"] = emoji
 
     screen = [{
         "title": CREATE_ROW_TITLE,
         "subtitle": subtitle,
         "arg": title,
         "valid": True,
-        "variables": {"action": "create", "title": title, "description": description},
+        "variables": createVariables,
     }]
 
     # THESE ARRIVE ACROSS A PROCESS BOUNDARY, SO THEY ARE VALIDATED RATHER
@@ -154,12 +164,12 @@ def confirmation_items(parsed, suggestions):
     for suggestion in suggestions or []:
         if not suggestion.get("token") or not suggestion.get("suggested"):
             continue
-        screen.append(_correction_row(title, description, suggestion))
+        screen.append(_correction_row(title, description, suggestion, emoji))
 
     return screen
 
 
-def _correction_row(title, description, suggestion):
+def _correction_row(title, description, suggestion, emoji=None):
     """
     *one suspect token, as a row that can be accepted on its own*
 
@@ -183,16 +193,20 @@ def _correction_row(title, description, suggestion):
     # WHAT THE ROW SHOWS AND WHAT ACCEPTING IT WRITES HAVE TO BE THE SAME.
     replacement = spell_check.cased_suggestion(token, suggestion["suggested"])
 
+    recheckVariables = {"action": "recheck", "title": corrected, "description": description}
+    if emoji:
+        # THE EMOJI STEP RAN BEFORE THIS SCREEN, SO A CORRECTION THAT
+        # RE-RENDERS IT MUST NOT DROP THE EMOJI ALREADY SETTLED ON.
+        recheckVariables["emoji"] = emoji
+
     return {
         "title": f"Use «{replacement}» instead of «{token}»",
         "subtitle": parse.parse_subtitle(
             {"title": corrected, "description": description},
-        ),
+        ) + _emoji_suffix(emoji),
         "arg": corrected,
         "valid": True,
-        "variables": {
-            "action": "recheck", "title": corrected, "description": description,
-        },
+        "variables": recheckVariables,
         "mods": {
             TEACH_MODIFIER: {
                 "subtitle": f"Teach aardvark that «{token}» is a word",
@@ -248,3 +262,163 @@ def success_items(entity):
         },
         *items.destination_items(entity.get("urls") or {}, entity.get("title", "")),
     ]
+
+
+def _emoji_row(emoji, subtitle):
+    """*one row of the emoji step: pick this emoji*"""
+    return {
+        "title": emoji,
+        "subtitle": subtitle,
+        "arg": emoji,
+        "valid": True,
+        "variables": {"action": "emoji", "emoji": emoji},
+    }
+
+
+def emoji_items(query, defaultEmoji, searchResults=None):
+    """
+    *the emoji step: the offline pick as the default, and a free-text search over the emoji index*
+
+    Only `add_area`, `add_category` and `set_emoji` reach this step - IDs
+    are never emoji-suffixed. `emoji_picker.pick_emoji` returns the bare
+    `📁` fallback for most area- and category-style titles, so the manual
+    path carries the real load and is kept prominent: type anything and
+    the first row uses it verbatim (an emoji pasted straight in, or a word
+    to search), with the index matches below it.
+
+    **Key Arguments:**
+
+    - ``query`` -- the raw text of the emoji field
+    - ``defaultEmoji`` -- `emoji_picker.pick_emoji`'s offline result
+    - ``searchResults`` -- `(emoji, keyword)` pairs from `emoji_picker.search_emoji`, for a non-empty query. Default `None`.
+
+    **Return:**
+
+    - ``items`` -- the Alfred item dicts
+
+    **Usage:**
+
+    ```python
+    from aardvark_jd.alfred import rows
+    step = rows.emoji_items(query, "📁", emoji_picker.search_emoji(query))
+    ```
+    """
+    query = (query or "").strip()
+    if not query:
+        return [_emoji_row(
+            defaultEmoji, "the offline pick - ↩ to use it, or type an emoji or a word to search",
+        )]
+
+    step = [_emoji_row(query, "use exactly what you typed")]
+    for emoji, keyword in searchResults or []:
+        step.append(_emoji_row(emoji, f"match for «{keyword}»"))
+    return step
+
+
+def _action_confirm_row(title, subtitle, variables):
+    """
+    *the single row a confirmation screen with no title entry is: one Return commits*
+
+    `archive` and `set_emoji` take a reference and, at most, one more
+    value - there is nothing to parse, so their confirmation is one row
+    rather than the `confirmation_items` title/description shape.
+
+    **Key Arguments:**
+
+    - ``title`` -- what the row says will happen
+    - ``subtitle`` -- the consequence, spelled out
+    - ``variables`` -- carried onto the run; `action` is forced to `create`
+
+    **Return:**
+
+    - ``items`` -- a one-item list
+    """
+    return [{
+        "title": title,
+        "subtitle": subtitle,
+        "arg": variables.get("ref", ""),
+        "valid": True,
+        "variables": {**variables, "action": "create"},
+    }]
+
+
+def archive_confirm_items(ref, label):
+    """
+    *`archive`'s confirmation screen: one row, and Return frees the number*
+
+    **Key Arguments:**
+
+    - ``ref`` -- the Johnny Decimal reference being archived
+    - ``label`` -- the entity's `<code>  <title>` line, for the row
+
+    **Return:**
+
+    - ``items`` -- a one-item list
+    """
+    return _action_confirm_row(
+        f"Archive {label}",
+        "moves the folder to the nearest archive and frees its number - this is one-way",
+        {"ref": ref},
+    )
+
+
+def set_emoji_confirm_items(ref, label, emoji):
+    """
+    *`set_emoji`'s confirmation screen: one row carrying the ref and the new emoji*
+
+    **Key Arguments:**
+
+    - ``ref`` -- the reference whose emoji is changing
+    - ``label`` -- the entity's `<code>  <title>` line
+    - ``emoji`` -- the emoji settled on the emoji step
+
+    **Return:**
+
+    - ``items`` -- a one-item list
+    """
+    return _action_confirm_row(
+        f"Set {label} to {emoji}",
+        "renames the folder to carry the new emoji and repoints the index",
+        {"ref": ref, "emoji": emoji},
+    )
+
+
+def template_items(templateNames):
+    """
+    *`add_project`'s template step: the blank scaffold first, then each `04_templates` zip*
+
+    A plain list step before the title field. The blank scaffold is
+    always the first row; the category's own template zips follow in the
+    order the directory listing gave them.
+
+    **Key Arguments:**
+
+    - ``templateNames`` -- the `*.zip` basenames in the category's `04_templates` folder
+
+    **Return:**
+
+    - ``items`` -- the Alfred item dicts, blank first
+
+    **Usage:**
+
+    ```python
+    from aardvark_jd.alfred import rows
+    step = rows.template_items(parse.template_names(templatesPath))
+    ```
+    """
+    step = [{
+        "title": "Blank project",
+        "subtitle": "README.md, input/, output/",
+        "arg": "blank",
+        "valid": True,
+        "variables": {"action": "template", "templateName": "blank"},
+    }]
+    for name in templateNames:
+        step.append({
+            "title": name,
+            "subtitle": "unzip this template into the new project folder",
+            "arg": name,
+            "valid": True,
+            "variables": {"action": "template", "templateName": name},
+        })
+    return step
