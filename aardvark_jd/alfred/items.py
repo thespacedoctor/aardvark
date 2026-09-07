@@ -359,12 +359,13 @@ def reference_payload(contract, entityType, domain=None):
         if domain is not None and entity.get("domain") != domain:
             continue
         code = entity.get("code", "")
+        title = _entity_title(entity)
         # BUILT FROM THE ENTITY ROW'S *PIECES*, NOT BY MERGING OVER THE WHOLE
         # ROW. A MERGE LEAVES `mods`, `uid` AND `skipknowledge` BEHIND, WHICH
         # WOULD OFFER "REVEAL THE FOLDER IN FINDER" ON A ROW WHOSE ONLY JOB
         # IS TO NAME A REFERENCE.
         rows.append({
-            "title": _entity_title(entity),
+            "title": title,
             "subtitle": _relative_path(entity["folder_path"], rootPath),
             "match": _match_string(entity, rootPath),
             "arg": code,
@@ -373,10 +374,13 @@ def reference_payload(contract, entityType, domain=None):
             # IT AND MUST NOT FETCH THE WHOLE INDEX AGAIN TO GET IT.
             # `folder_path` DOES THE SAME FOR `add_project`, WHOSE TEMPLATE
             # STEP FINDS THE CATEGORY'S TEMPLATES FOLDER FROM IT; THE OTHER
-            # COMMANDS IGNORE IT.
+            # COMMANDS IGNORE IT. `entity_title` NAMES THE PICK ON `archive`
+            # AND `set_emoji`'S CONFIRMATION SCREEN AND SEEDS `set_emoji`'S
+            # EMOJI STEP - THE SAME KEY `entity_item` CARRIES ON THE MAIN LIST.
             "variables": {
                 "action": "reference", variableKey: code,
                 "root_path": rootPath or "", "folder_path": entity.get("folder_path", ""),
+                "entity_title": title,
             },
         })
 

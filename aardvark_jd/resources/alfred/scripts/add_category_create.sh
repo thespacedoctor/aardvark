@@ -1,0 +1,25 @@
+#!/bin/zsh --no-rcs
+#
+# `add_category`, step 5: create the category, its reserved IDs and the mirrors.
+#
+
+set -u
+
+scriptDir="${0:A:h}"
+source "${scriptDir}/_resolve.sh"
+
+if ! aardvark_resolve; then
+    aardvark_emit_create_error "aardvark could not be found - run \`${AARDVARK_INSTALL_COMMAND}\` in a terminal"
+fi
+
+if [ -n "${emoji:-}" ]; then
+    result="$("$aardvarkBinary" add_category "${area:-}" "${title:-}" "${description:-}" -e "${emoji}" --json 2>/dev/null)"
+else
+    result="$("$aardvarkBinary" add_category "${area:-}" "${title:-}" "${description:-}" --json 2>/dev/null)"
+fi
+
+if [ -z "$result" ]; then
+    aardvark_emit_create_error "aardvark returned nothing"
+fi
+
+print -r -- "$result"

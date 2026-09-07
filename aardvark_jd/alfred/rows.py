@@ -113,12 +113,64 @@ def argument_items(query, backLabel):
     ]
 
 
+def title_only_items(query, backLabel):
+    """
+    *the argument step for a command that takes a title and nothing else*
+
+    `add_project`'s docopt line is `<category> <projectTitle>` - one
+    positional, no description - so its step is a plain title field with
+    no comma split. The back row behaves exactly as in `argument_items`:
+    it leads while the field is empty and steps aside once there is
+    something to lose.
+
+    **Key Arguments:**
+
+    - ``query`` -- the raw text of the title field
+    - ``backLabel`` -- what the back row says, e.g. "Choose a different template"
+
+    **Return:**
+
+    - ``items`` -- the Alfred item dicts
+
+    **Usage:**
+
+    ```python
+    from aardvark_jd.alfred import rows
+    step = rows.title_only_items(query, "Choose a different template")
+    ```
+    """
+    back = back_row(backLabel)
+    title = (query or "").strip()
+    if not title:
+        return [back]
+
+    return [
+        {
+            "title": title,
+            "subtitle": f"title = «{title}»",
+            "arg": title,
+            "valid": True,
+            "variables": {"action": "confirm", "title": title, "description": ""},
+        },
+        back,
+    ]
+
+
 def _emoji_suffix(emoji):
     """*the ` emoji = «…»` a confirmation subtitle carries when an emoji was chosen, else empty*"""
     return f"  emoji = «{emoji}»" if emoji else ""
 
 
-def confirmation_items(parsed, suggestions, emoji=None):
+def _confirm_subtitle(title, description, emoji, titleOnly):
+    """*the confirmation row's subtitle: the parse, plus the emoji when one was chosen*"""
+    if titleOnly:
+        return f"title = «{title}»" + _emoji_suffix(emoji)
+    return parse.parse_subtitle(
+        {"title": title, "description": description},
+    ) + _emoji_suffix(emoji)
+
+
+def confirmation_items(parsed, suggestions, emoji=None, titleOnly=False):
     """
     *the confirmation screen: what will be created, and every correction offered against it*
 
@@ -131,6 +183,7 @@ def confirmation_items(parsed, suggestions, emoji=None):
     - ``parsed`` -- a `parse.title_and_description` result
     - ``suggestions`` -- the contract's `suggestions` array for that title, or `None`
     - ``emoji`` -- the emoji settled on the emoji step, for `add_area` and `add_category`. Default `None`, for the commands with no emoji step.
+    - ``titleOnly`` -- drop the description field, for `add_project`, whose docopt line takes only a title. Default `False`.
 
     **Return:**
 
@@ -144,10 +197,12 @@ def confirmation_items(parsed, suggestions, emoji=None):
     ```
     """
     title = parsed.get("title", "")
-    description = parsed.get("description", "")
-    subtitle = parse.parse_subtitle(parsed) + _emoji_suffix(emoji)
+    description = "" if titleOnly else parsed.get("description", "")
+    subtitle = _confirm_subtitle(title, description, emoji, titleOnly)
 
-    createVariables = {"action": "create", "title": title, "description": description}
+    createVariables = {"action": "create", "title": title}
+    if not titleOnly:
+        createVariables["description"] = description
     if emoji:
         createVariables["emoji"] = emoji
 
@@ -164,12 +219,12 @@ def confirmation_items(parsed, suggestions, emoji=None):
     for suggestion in suggestions or []:
         if not suggestion.get("token") or not suggestion.get("suggested"):
             continue
-        screen.append(_correction_row(title, description, suggestion, emoji))
+        screen.append(_correction_row(title, description, suggestion, emoji, titleOnly))
 
     return screen
 
 
-def _correction_row(title, description, suggestion, emoji=None):
+def _correction_row(title, description, suggestion, emoji=None, titleOnly=False):
     """
     *one suspect token, as a row that can be accepted on its own*
 
@@ -193,7 +248,9 @@ def _correction_row(title, description, suggestion, emoji=None):
     # WHAT THE ROW SHOWS AND WHAT ACCEPTING IT WRITES HAVE TO BE THE SAME.
     replacement = spell_check.cased_suggestion(token, suggestion["suggested"])
 
-    recheckVariables = {"action": "recheck", "title": corrected, "description": description}
+    recheckVariables = {"action": "recheck", "title": corrected}
+    if not titleOnly:
+        recheckVariables["description"] = description
     if emoji:
         # THE EMOJI STEP RAN BEFORE THIS SCREEN, SO A CORRECTION THAT
         # RE-RENDERS IT MUST NOT DROP THE EMOJI ALREADY SETTLED ON.
@@ -201,9 +258,7 @@ def _correction_row(title, description, suggestion, emoji=None):
 
     return {
         "title": f"Use «{replacement}» instead of «{token}»",
-        "subtitle": parse.parse_subtitle(
-            {"title": corrected, "description": description},
-        ) + _emoji_suffix(emoji),
+        "subtitle": _confirm_subtitle(corrected, description, emoji, titleOnly),
         "arg": corrected,
         "valid": True,
         "variables": recheckVariables,
@@ -344,7 +399,12 @@ def _action_confirm_row(title, subtitle, variables):
 
 def archive_confirm_items(ref, label):
     """
-    *`archive`'s confirmation screen: one row, and Return frees the number*
+    *`archive`'s confirmation screen: commit on Return, or step back to the pick*
+
+    Archiving frees a Johnny Decimal number irreversibly, so unlike the
+    other one-row confirmations this one carries a back row: a mis-picked
+    target has to be recoverable without discarding the run, and Alfred's
+    Escape discards it.
 
     **Key Arguments:**
 
@@ -353,13 +413,13 @@ def archive_confirm_items(ref, label):
 
     **Return:**
 
-    - ``items`` -- a one-item list
+    - ``items`` -- the commit row, then the way back
     """
     return _action_confirm_row(
         f"Archive {label}",
         "moves the folder to the nearest archive and frees its number - this is one-way",
         {"ref": ref},
-    )
+    ) + [back_row("Choose something else to archive")]
 
 
 def set_emoji_confirm_items(ref, label, emoji):

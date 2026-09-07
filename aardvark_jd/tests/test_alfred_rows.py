@@ -224,13 +224,15 @@ def test_the_confirmation_without_an_emoji_is_unchanged():
 
 # ----------------------------------------- slice 3: archive and set_emoji confirms
 
-def test_archive_confirmation_is_one_row_that_commits_on_return():
+def test_archive_confirmation_commits_on_return_and_offers_a_way_back():
     items = rows.archive_confirm_items("A11.10", "A11.10  Cardiologist")
 
-    assert len(items) == 1
     assert items[0]["variables"]["action"] == "create"
     assert items[0]["variables"]["ref"] == "A11.10"
     assert "one-way" in items[0]["subtitle"] or "frees" in items[0]["subtitle"]
+    # ARCHIVE FREES A JOHNNY DECIMAL NUMBER IRREVERSIBLY, SO A MIS-PICKED
+    # TARGET MUST BE RECOVERABLE WITHOUT DISCARDING THE RUN.
+    assert items[-1]["variables"]["action"] == "back"
 
 
 def test_set_emoji_confirmation_carries_the_ref_and_the_new_emoji():
@@ -257,3 +259,38 @@ def test_the_template_pick_is_just_blank_when_there_are_no_zips():
     items = rows.template_items([])
 
     assert [item["arg"] for item in items] == ["blank"]
+
+
+# ----------------------------------------- slice 3: the title-only step (add_project)
+
+def test_the_empty_title_only_step_shows_only_the_way_back():
+    items = rows.title_only_items("", "Choose a different template")
+
+    assert len(items) == 1
+    assert items[0]["variables"]["action"] == "back"
+
+
+def test_a_typed_title_only_step_never_splits_on_a_comma():
+    items = rows.title_only_items("Relaunch, the big one", "back")
+
+    assert items[0]["variables"]["title"] == "Relaunch, the big one"
+    assert items[0]["variables"]["description"] == ""
+    assert items[0]["subtitle"] == "title = «Relaunch, the big one»"
+    assert items[1]["variables"]["action"] == "back"
+
+
+def test_the_title_only_confirmation_has_no_description_field():
+    items = rows.confirmation_items({"title": "Relaunch"}, [], titleOnly=True)
+
+    assert items[0]["subtitle"] == "title = «Relaunch»"
+    assert "description" not in items[0]["variables"]
+
+
+def test_a_title_only_correction_row_carries_no_description():
+    row = rows.confirmation_items(
+        {"title": "Aadvark"}, [{"token": "Aadvark", "index": 0, "suggested": "aardvark"}],
+        titleOnly=True,
+    )[1]
+
+    assert row["variables"]["title"] == "Aardvark"
+    assert "description" not in row["variables"]

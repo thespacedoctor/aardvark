@@ -115,3 +115,21 @@ aardvark_emit_resolution_failure() {
             ;;
     esac
 }
+
+# EMIT A MUTATING-RESULT-SHAPED ERROR ENVELOPE ON STDOUT AND STOP. A
+# `*_create.sh` STEP IS A RUN SCRIPT WHOSE STDOUT BECOMES THE NEXT
+# OBJECT'S QUERY, AND THAT OBJECT PARSES IT AS JSON: A BARE DIAGNOSTIC
+# LINE CRASHES THE SUCCESS SCREEN INTO AN EMPTY LIST. THIS ENVELOPE
+# MATCHES THE CONTRACT'S OWN `error` OBJECT, WHICH EVERY `*_success.py`
+# ALREADY RENDERS THROUGH `items.error_row`. THE MESSAGE IS A STATIC
+# DIAGNOSTIC STRING FROM THE CALL SITE, NEVER USER OR PATH DATA; THE
+# BACKSLASH-THEN-QUOTE ESCAPE COVERS THAT, AND CONTROL CHARACTERS ARE
+# FLATTENED TO SPACES SO A STRAY TAB CANNOT PRODUCE INVALID JSON.
+aardvark_emit_create_error() {
+    local errorMessage="$1"
+    errorMessage="${errorMessage//[[:cntrl:]]/ }"
+    errorMessage="${errorMessage//\\/\\\\}"
+    errorMessage="${errorMessage//\"/\\\"}"
+    print -r -- "{\"error\":{\"kind\":\"workflow\",\"message\":\"${errorMessage}\"}}"
+    exit 1
+}

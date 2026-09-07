@@ -428,6 +428,22 @@ def test_the_any_entity_reference_pick_carries_a_ref_variable():
     assert payload["items"][0]["variables"]["root_path"] == "/root"
 
 
+def test_a_reference_row_carries_the_entity_title_forward():
+    """
+    *`archive` and `set_emoji` name the entity on their confirmation screen*
+
+    Without it their confirm screen reads "Archive A11.10" with no title,
+    on the one screen where naming the thing being destroyed matters most,
+    and `set_emoji`'s emoji step loses its `pick_emoji` seed.
+    """
+    rows = items.reference_payload(_mixedContract(), None)["items"]
+    row = next(r for r in rows if r["arg"] == "A11.10")
+
+    assert row["variables"]["entity_title"] == row["title"]
+    assert "A11.10" in row["variables"]["entity_title"]
+    assert "Cardiologist" in row["variables"]["entity_title"]
+
+
 # --------------------------------------------- the domain-letter reference pick
 
 
