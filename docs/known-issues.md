@@ -53,3 +53,55 @@ can reach a real terminal.
 preferring the structured `method` / `path` / `statusCode` fields now on
 `CraftApiError` over the raw body. Route every stderr sync-failure print through
 `_printable`. Add a length cap to anything derived from `responseText`.
+
+## A help or version flag typed into a CLI field is echoed as command output
+
+**Status:** open. Raised during the security review of the Alfred mutating set
+(branch `feature/alfred-mutating-slice-3`). The `--help-all` half was fixed in that
+branch; `-h` / `--help` / `-v` / `--version` are still open.
+
+**What is wrong.** The Alfred mutating flows pass a title, description or emoji
+field to the CLI as a positional argument. If that text is exactly a help or
+version flag, the CLI treats it as the flag:
+
+- `--help-all` was caught by a bare `"--help-all" in argv` check before docopt ran,
+  and printed the full help screen to stdout in front of the `--json` contract.
+  **Fixed** by narrowing the check to `argv[:1] == ["--help-all"]`. A non-leading
+  `--help-all` now falls through to docopt, which rejects it (the flag is in no
+  usage pattern) with a non-zero exit and empty stdout.
+- `-h`, `--help`, `-v` and `--version` are handled by docopt's own `extras()`,
+  which runs before pattern matching and does `print(__doc__); sys.exit(0)` from
+  **any** position. This is currently contained only because every Alfred call site
+  passes `--json`, and `_json_requested` redirects set-up stdout to stderr for the
+  whole run. Narrow that redirect, or add one non-`--json` Alfred invocation of a
+  command that takes free text, and the help screen reaches stdout again - with a
+  zero exit code, so Alfred's `[ -z "$result" ]` guard does not catch it.
+
+Field text originates at the same user's keyboard, so nothing here crosses a trust
+boundary; the impact is a broken screen, not disclosure. That is why it is a
+medium, not a high.
+
+**Why it was left.** The `--help-all` one-liner was safe and in scope. The full fix
+touches the docopt usage lines and the six `*_create.sh` wrappers, which is a real
+change rather than a one-liner, and it was raised mid-slice.
+
+**What a fix needs.** A `--` separator in every affected usage line, so free-text
+positionals cannot be read as flags. Verified against docopt 0.6.2:
+
+1. `[--]` is optional and backwards compatible: terminal use without the separator
+   still parses.
+2. Every option must sit **before** the `--` in the usage line, e.g.
+   `aardvark add_id [--json] [-w] [-s <pathToSettingsFile>] <category> [--] <title> <description>`.
+   A token after `--` is always a positional, so `add_id A11 -- t d --json` treats
+   `--json` as a third positional and fails.
+3. The Alfred call sites must move `--json` (and `-t`, `-e`) before the `--` too:
+   `"$aardvarkBinary" add_id --json "${category}" -- "${title}" "${description}"`.
+   Six create scripts change.
+
+Post-`--` tokens become `Argument`s before `extras()` runs, so this closes the
+`-h` / `--version` path as well as `--help-all`.
+
+**Interim mitigation.** Keep the `_json_requested` stdout redirect
+(`cl_utils.py`) as-is - it is what holds the `-h` case shut - and do not add a
+non-`--json` Alfred call site of a free-text command. A comment on that function
+records the constraint.
