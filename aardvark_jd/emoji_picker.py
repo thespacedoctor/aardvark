@@ -189,6 +189,93 @@ def resolve_emoji(title, description="", chosenEmoji=None):
             print(f"  {error}")
 
 
+def search_emoji(query, limit=8):
+    """
+    *the emoji whose CLDR keywords match a search word, best matches first*
+
+    Backs the free-text search on Alfred's emoji step. A prefix match on a
+    keyword ranks above a mere substring match; ties keep the keyword
+    index's own order, which favours the canonical entry for a keyword.
+
+    **Key Arguments:**
+
+    - ``query`` -- the search word
+    - ``limit`` -- the most rows to return. Default `8`.
+
+    **Return:**
+
+    - ``matches`` -- a list of `(emoji, keyword)` pairs, at most `limit` long
+
+    **Usage:**
+
+    ```python
+    from aardvark_jd import emoji_picker
+    matches = emoji_picker.search_emoji("bike")
+    ```
+    """
+    needle = "".join(ch for ch in (query or "").lower() if ch.isalnum())
+    if not needle:
+        return []
+
+    keywordIndex = _get_keyword_index()
+    prefixMatches = []
+    substringMatches = []
+    for keyword, emoji in keywordIndex.items():
+        if needle not in keyword:
+            continue
+        (prefixMatches if keyword.startswith(needle) else substringMatches).append((emoji, keyword))
+
+    matches = []
+    seenEmoji = set()
+    for emoji, keyword in prefixMatches + substringMatches:
+        if emoji in seenEmoji:
+            continue
+        seenEmoji.add(emoji)
+        matches.append((emoji, keyword))
+    return matches[:limit]
+
+
+def resolve_emoji_with_source(title, description="", chosenEmoji=None):
+    """
+    *`resolve_emoji`, plus where the emoji came from, for the JSON contract*
+
+    The mutating result's `emoji_source` field. Two values reach it from
+    the CLI:
+
+    - ``chosen`` -- an emoji was supplied: the `--emoji` flag on the
+      terminal, or the emoji Alfred's own emoji step settled on
+    - ``offline`` -- the offline keyword pick stood, the bare `📁`
+      fallback included
+
+    A third value, ``deferred`` (a folder created with no emoji, to be set
+    later with `set_emoji`), is reserved but never produced here: every
+    `add_*`/`set_emoji` run resolves to some emoji. The source is only
+    read back through `--json`, which never prompts, so the interactive
+    branch of `resolve_emoji` - where a user could type a replacement over
+    the offline pick - is not a case this has to label.
+
+    **Key Arguments:**
+
+    - ``title`` -- the folder's title
+    - ``description`` -- the folder's description. Default `""`.
+    - ``chosenEmoji`` -- an emoji supplied on the command-line. Default `None`.
+
+    **Return:**
+
+    - ``resolvedEmoji`` -- the emoji to append to the folder name
+    - ``source`` -- `"chosen"` or `"offline"`
+
+    **Usage:**
+
+    ```python
+    from aardvark_jd import emoji_picker
+    resolvedEmoji, source = emoji_picker.resolve_emoji_with_source("Doctors", "GP")
+    ```
+    """
+    source = "chosen" if chosenEmoji else "offline"
+    return resolve_emoji(title, description, chosenEmoji=chosenEmoji), source
+
+
 def validate_chosen_emoji(chosenEmoji):
     """
     *check a user-supplied emoji is usable in a folder name*

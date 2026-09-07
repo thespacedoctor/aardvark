@@ -5,15 +5,15 @@ Documentation for aardvark can be found here: http://aardvark-jd.readthedocs.org
 
 Usage:
     aardvark init <systemName> <parentPath> [-s <pathToSettingsFile>]
-    aardvark add_area <domainLetter> <title> <description> [-e <emoji>] [-w] [-s <pathToSettingsFile>]
-    aardvark add_category <area> <title> <description> [-e <emoji>] [-w] [-s <pathToSettingsFile>]
+    aardvark add_area <domainLetter> <title> <description> [-e <emoji>] [--json] [-w] [-s <pathToSettingsFile>]
+    aardvark add_category <area> <title> <description> [-e <emoji>] [--json] [-w] [-s <pathToSettingsFile>]
     aardvark add_id <category> <title> <description> [--json] [-w] [-s <pathToSettingsFile>]
-    aardvark add_project <category> <projectTitle> [-t <templateName>] [-w] [-s <pathToSettingsFile>]
-    aardvark archive <ref> [-y] [-w] [-s <pathToSettingsFile>]
+    aardvark add_project <category> <projectTitle> [-t <templateName>] [--json] [-w] [-s <pathToSettingsFile>]
+    aardvark archive <ref> [-y] [--json] [-w] [-s <pathToSettingsFile>]
     aardvark fd [<term>...] [--json] [--archived] [-s <pathToSettingsFile>]
     aardvark cd <target> [-s <pathToSettingsFile>]
     aardvark open [<path>] [--json] [-s <pathToSettingsFile>]
-    aardvark set_emoji <ref> <emoji> [-w] [-s <pathToSettingsFile>]
+    aardvark set_emoji <ref> <emoji> [--json] [-w] [-s <pathToSettingsFile>]
     aardvark repair_emoji [-w] [-s <pathToSettingsFile>]
     aardvark install_alfred [--uninstall] [-s <pathToSettingsFile>]
     aardvark completion <shell>
@@ -151,7 +151,11 @@ def main(arguments=None):
         if argv[:1] == ["shell_init"]:
             print(completion.shell_init_script(argv[1] if len(argv) > 1 else ""))
             return
-        if "--help-all" in argv:
+        # `--help-all` IS A LEADING FLAG, LIKE `-h`, NOT A VALUE. TESTING
+        # `in argv` FIRED WHEN IT ARRIVED AS A POSITIONAL OR OPTION VALUE -
+        # E.G. TYPED INTO A MUTATING FLOW'S TITLE FIELD - AND DUMPED THE
+        # HELP SCREEN AS THE COMMAND'S OUTPUT.
+        if argv[:1] == ["--help-all"]:
             print(help_text.full_help(__doc__))
             return
         if not argv or argv[0] in ("-h", "--help"):
@@ -593,38 +597,72 @@ def _dispatch(a, log, indexDbConn, settings):
     - ``settings`` -- the aardvark settings dict
     """
     if a["add_project"]:
-        code, title, folderPath, templateUsed = add_project(
+        jsonRequested = a.get("jsonFlag")
+        code, title, folderPath, templateUsed, details = add_project(
             log=log, dbConn=indexDbConn, categoryRef=a["category"], templateName=a["templateFlag"],
             projectTitle=a["projectTitle"], settings=settings,
+            interactive=_json_interactive(jsonRequested),
         ).get()
-        print(f"{code}  {title}  {folderPath} (template: {templateUsed})")
-        _hand_off_sync(a, log, indexDbConn, settings)
+        if not jsonRequested:
+            print(f"{code}  {title}  {folderPath} (template: {templateUsed})")
+        sync = _hand_off_sync(a, log, indexDbConn, settings)
+        if jsonRequested:
+            _mutating_json(
+                "add_project", folderPath, indexDbConn, settings, sync,
+                template_used=templateUsed,
+                corrections=details["corrections"], suggestions=details["suggestions"],
+            )
 
     elif a["add_area"]:
-        code, folderPath = add_area(
+        jsonRequested = a.get("jsonFlag")
+        code, folderPath, details = add_area(
             log=log, dbConn=indexDbConn, domain=codes.domain_from_letter(a["domainLetter"]),
             title=a["title"], description=a["description"],
             chosenEmoji=a["emojiFlag"], settings=settings,
+            interactive=_json_interactive(jsonRequested),
         ).get()
-        print(f"{code}  {folderPath}")
-        _hand_off_sync(a, log, indexDbConn, settings)
+        if not jsonRequested:
+            print(f"{code}  {folderPath}")
+        sync = _hand_off_sync(a, log, indexDbConn, settings)
+        if jsonRequested:
+            _mutating_json(
+                "add_area", folderPath, indexDbConn, settings, sync,
+                emoji_source=details["emoji_source"],
+                corrections=details["corrections"], suggestions=details["suggestions"],
+            )
 
     elif a["add_category"]:
         domain, _ = codes.split_area_ref(a["area"])
-        code, folderPath = add_category(
+        jsonRequested = a.get("jsonFlag")
+        code, folderPath, details = add_category(
             log=log, dbConn=indexDbConn, domain=domain, areaRef=a["area"],
             title=a["title"], description=a["description"],
             chosenEmoji=a["emojiFlag"], settings=settings,
+            interactive=_json_interactive(jsonRequested),
         ).get()
-        print(f"{code}  {folderPath}")
-        _hand_off_sync(a, log, indexDbConn, settings)
+        if not jsonRequested:
+            print(f"{code}  {folderPath}")
+        sync = _hand_off_sync(a, log, indexDbConn, settings)
+        if jsonRequested:
+            _mutating_json(
+                "add_category", folderPath, indexDbConn, settings, sync,
+                emoji_source=details["emoji_source"],
+                corrections=details["corrections"], suggestions=details["suggestions"],
+            )
 
     elif a["set_emoji"]:
-        label, folderPath = set_emoji(
+        jsonRequested = a.get("jsonFlag")
+        label, folderPath, details = set_emoji(
             log=log, dbConn=indexDbConn, ref=a["ref"], newEmoji=a["emoji"],
         ).get()
-        print(f"{label}  {folderPath}")
-        _hand_off_sync(a, log, indexDbConn, settings)
+        if not jsonRequested:
+            print(f"{label}  {folderPath}")
+        sync = _hand_off_sync(a, log, indexDbConn, settings)
+        if jsonRequested:
+            _mutating_json(
+                "set_emoji", folderPath, indexDbConn, settings, sync,
+                emoji_source=details["emoji_source"],
+            )
 
     elif a["repair_emoji"]:
         repaired = repair_emoji(log=log, dbConn=indexDbConn).get()
@@ -640,17 +678,15 @@ def _dispatch(a, log, indexDbConn, settings):
         code, folderPath, details = add_id(
             log=log, dbConn=indexDbConn, domain=domain, categoryRef=a["category"],
             title=a["title"], description=a["description"], settings=settings,
-            # `--json` PROMISES IT NEVER PROMPTS. THAT PROMISE IS THIS FLAG'S
-            # TO MAKE, NOT THE TERMINAL'S TO IMPLY - RUN FROM A REAL SHELL,
-            # AN INFERRED `isatty` WOULD BLOCK ON A PROMPT NOBODY IS READING.
-            interactive=False if jsonRequested else None,
+            interactive=_json_interactive(jsonRequested),
         ).get()
         if not jsonRequested:
             print(f"{code}  {folderPath}")
         sync = _hand_off_sync(a, log, indexDbConn, settings)
         if jsonRequested:
             _mutating_json(
-                "add_id", details, folderPath, indexDbConn, settings, sync,
+                "add_id", folderPath, indexDbConn, settings, sync,
+                corrections=details["corrections"], suggestions=details["suggestions"],
             )
 
     elif a["fd"]:
@@ -664,7 +700,11 @@ def _dispatch(a, log, indexDbConn, settings):
             _search(a, log, indexDbConn)
 
     elif a["archive"]:
-        if not a["yesFlag"] and sys.stdin.isatty():
+        jsonRequested = a.get("jsonFlag")
+        # `--json` NEVER PROMPTS, SO IT STANDS IN FOR `-y` THE SAME WAY THE
+        # ALFRED CONFIRMATION SCREEN DOES - THE DECISION WAS ALREADY MADE
+        # THERE, AND THERE IS NO TERMINAL TO ASK AT.
+        if not a["yesFlag"] and not jsonRequested and sys.stdin.isatty():
             answer = input(f"archive '{a['ref']}' and free its number? [y/N] ").strip().lower()
             if answer not in ("y", "yes"):
                 print("nothing archived")
@@ -672,14 +712,17 @@ def _dispatch(a, log, indexDbConn, settings):
         code, archivedPath, warnings = archive(
             log=log, dbConn=indexDbConn, ref=a["ref"], settings=settings,
         ).get()
-        print(f"archived {code}  {archivedPath}")
+        if not jsonRequested:
+            print(f"archived {code}  {archivedPath}")
         for warning in warnings:
             print(f"note: {warning}", file=sys.stderr)
         # `archive` MOVES FOLDERS THE MIRRORS ADOPT BY NAME, SO IT NEEDS THE
         # SAME WHOLE-TREE REPAIR AS THE OTHER SIX MUTATING COMMANDS. ITS OWN
         # PER-MIRROR ARCHIVING ABOVE HANDLES THE MOVED ENTITY; THIS RECONCILES
         # THE INDEX DOCUMENTS THAT LISTED IT.
-        _hand_off_sync(a, log, indexDbConn, settings)
+        sync = _hand_off_sync(a, log, indexDbConn, settings)
+        if jsonRequested:
+            _archive_json(archivedPath, warnings, indexDbConn, sync)
 
     elif a["open"]:
         if a.get("jsonFlag"):
@@ -715,6 +758,11 @@ def _json_requested(arguments):
     - ``jsonRequested`` -- `True` if `--json` was asked for
     """
     if arguments is None:
+        # A MEMBERSHIP TEST ON PURPOSE, NOT A LEADING-FLAG CHECK LIKE THE
+        # `--help-all` GUARD IN `main`. EVERY ALFRED CALL SITE PUTS `--json`
+        # LAST, AND THIS REDIRECT IS WHAT KEEPS A STRAY `-h`/`--version`
+        # TYPED INTO A FIELD OFF STDOUT. FAILING SAFE HERE MEANS "REDIRECT
+        # ON", SO A SPURIOUS MATCH ONLY OVER-PROTECTS.
         return "--json" in sys.argv[1:]
     return bool(arguments.get("--json"))
 
@@ -878,27 +926,50 @@ def _open_json(a, indexDbConn, settings):
     _print_json(json_output.result_envelope("open", entity=matches[0], label=label))
 
 
-def _mutating_json(action, details, folderPath, indexDbConn, settings, sync):
+def _json_interactive(jsonRequested):
     """
-    *print the uniform mutating result for a command that has just written something*
+    *the `interactive` argument a worker gets for this run*
 
-    One shape across every mutating command, so the workflow renders
-    them all the same way. `corrections` and `suggestions` come straight
-    off the worker and stay strictly apart: the first is what was
-    applied, the second what was offered and not accepted.
+    `--json` promises it never prompts, and that promise is the flag's to
+    make rather than the terminal's to imply: run `--json` from a real
+    shell and an inferred `isatty` would block on a prompt nobody is
+    reading. Without `--json`, `None` lets the worker decide from the tty.
 
-    The entity is resolved from the folder the command just created,
-    which is the same single-row read `open --json` does - the record it
-    returns is what the success surface is built from.
+    **Key Arguments:**
+
+    - ``jsonRequested`` -- whether `--json` was asked for
+
+    **Return:**
+
+    - ``interactive`` -- `False` under `--json`, else `None`
+    """
+    return False if jsonRequested else None
+
+
+def _mutating_json(action, folderPath, indexDbConn, settings, sync, **resultFields):
+    """
+    *print the uniform mutating result for a command that has just written a live entity*
+
+    One shape across every mutating command, so the workflow renders them
+    all the same way. The per-command fields (`corrections`,
+    `suggestions`, `emoji_source`, `template_used`) are passed straight
+    through by the caller, which is the only place that knows which of
+    them this command produces.
+
+    The entity is resolved from the folder the command just wrote, which
+    is the same single-row read `open --json` does - the record it returns
+    is what the success surface is built from. `archive` is the exception
+    and has its own path (`_archive_json`), because its entity has left
+    the live tables.
 
     **Key Arguments:**
 
     - ``action`` -- the command's action token, e.g. `add_id`
-    - ``details`` -- the `{"corrections", "suggestions"}` dict the worker returned
-    - ``folderPath`` -- the folder the command created
+    - ``folderPath`` -- the folder the command created or renamed
     - ``indexDbConn`` -- an open SQLite connection to the active system's index
     - ``settings`` -- the aardvark settings dict
     - ``sync`` -- `_hand_off_sync`'s label for what became of the mirroring
+    - ``resultFields`` -- the action-specific result fields
     """
     rootPath = (settings.get("system") or {}).get("root_path")
     entityType, entityKey, _folderPath, _label = locate.entity_for_path(
@@ -908,17 +979,43 @@ def _mutating_json(action, details, folderPath, indexDbConn, settings, sync):
         db.entities_with_links(indexDbConn, entityType=entityType, rowKey=entityKey)
     )
     if not records:
-        # THE ROW WAS JUST WRITTEN ON THIS CONNECTION, SO THIS CANNOT HAPPEN
-        # TODAY. IT IS CHECKED ANYWAY BECAUSE EVERYTHING ELSE ON THIS PATH IS
-        # WRITTEN SO THAT ALFRED NEVER SEES A TRACEBACK.
-        raise ValueError(f"'{folderPath}' was created but is not in the index")
+        # A LIVE AREA/CATEGORY/ID IS ALWAYS THERE - THE ROW WAS JUST WRITTEN ON
+        # THIS CONNECTION. `set_emoji` ON A SYSTEM FOLDER IS THE ONE CASE THAT
+        # LANDS HERE: THE RENAME SUCCEEDED, BUT THE CONTRACT'S ENTITY RECORD
+        # ONLY DESCRIBES THE THREE JOHNNY DECIMAL TYPES, SO IT IS AN ERROR ROW
+        # RATHER THAN A TRACEBACK. ALFRED NEVER OFFERS A SYSTEM FOLDER HERE.
+        raise ValueError(
+            f"'{action} --json' only describes areas, categories and IDs, not '{entityType}'"
+        )
 
     _print_json(json_output.result_envelope(
-        action,
-        entity=records[0],
-        corrections=details["corrections"],
-        suggestions=details["suggestions"],
-        sync=sync,
+        action, entity=records[0], sync=sync, **resultFields,
+    ))
+
+
+def _archive_json(archivedPath, warnings, indexDbConn, sync):
+    """
+    *print the mutating result for an `archive` that has just run*
+
+    `archive` moves its entity out of the live tables into
+    `archived_entities`, so its record is built from that table rather
+    than from `entities_with_links`. The row is looked up by its
+    datestamped archive path, which `archive` guarantees is unique.
+
+    **Key Arguments:**
+
+    - ``archivedPath`` -- where `archive` moved the folder
+    - ``warnings`` -- the non-fatal mirror problems `archive` collected
+    - ``indexDbConn`` -- an open SQLite connection to the active system's index
+    - ``sync`` -- `_hand_off_sync`'s label for what became of the mirroring
+    """
+    row = db.get_archived_entity_by_path(indexDbConn, archivedPath)
+    if row is None:
+        # SEE `_mutating_json` - THE ROW WAS JUST COMMITTED ON THIS CONNECTION.
+        raise ValueError(f"'{archivedPath}' was archived but is not in the archive index")
+
+    _print_json(json_output.result_envelope(
+        "archive", entity=json_output.archived_record(row), sync=sync, warnings=list(warnings),
     ))
 
 

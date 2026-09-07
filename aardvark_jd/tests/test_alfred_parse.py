@@ -89,3 +89,27 @@ def test_an_absent_description_still_renders_its_field():
     parsed = parse.title_and_description("Cardiologist")
 
     assert parse.parse_subtitle(parsed) == "title = «Cardiologist»  description = «»"
+
+
+# ------------------------------------------------- slice 3: the template step
+
+def test_template_names_are_the_sorted_zips_in_the_reserved_templates_folder(tmp_path):
+    category = tmp_path / "P11.10_website📁"
+    templates = category / "P11.04_templates📐"
+    templates.mkdir(parents=True)
+    (templates / "site-v2.zip").write_bytes(b"")
+    (templates / "site-v1.zip").write_bytes(b"")
+    (templates / "notes.txt").write_text("ignore me")
+
+    assert parse.template_names(str(category)) == ["site-v1.zip", "site-v2.zip"]
+
+
+def test_template_names_is_empty_for_a_category_with_no_templates_folder(tmp_path):
+    category = tmp_path / "P12.10_marketing📁"
+    category.mkdir()
+
+    assert parse.template_names(str(category)) == []
+
+
+def test_template_names_is_empty_for_a_blank_path():
+    assert parse.template_names("") == []

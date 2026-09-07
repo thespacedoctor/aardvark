@@ -70,7 +70,7 @@ def test_every_indexed_path_exists_before_any_rename(populatedSystem):
 def test_set_area_emoji_cascades_to_categories_and_ids(populatedSystem):
     _rootPath, dbConn = populatedSystem
 
-    label, newFolderPath = set_emoji(
+    label, newFolderPath, _ = set_emoji(
         log=log, dbConn=dbConn, ref="A10", newEmoji="🏥"
     ).get()
 
@@ -96,7 +96,7 @@ def test_set_category_emoji_cascades_to_its_ids_only(populatedSystem):
     _rootPath, dbConn = populatedSystem
     dentistsBefore = db.get_category(dbConn, "areas", 12)["folder_path"]
 
-    _label, newFolderPath = set_emoji(
+    _label, newFolderPath, _ = set_emoji(
         log=log, dbConn=dbConn, ref="A11", newEmoji="🩻"
     ).get()
 
@@ -115,7 +115,7 @@ def test_set_category_emoji_cascades_to_its_ids_only(populatedSystem):
 def test_set_system_folder_emoji_cascades_to_the_whole_domain(populatedSystem):
     _rootPath, dbConn = populatedSystem
 
-    _label, newFolderPath = set_emoji(
+    _label, newFolderPath, _ = set_emoji(
         log=log, dbConn=dbConn, ref="root.areas", newEmoji="🎯"
     ).get()
 
@@ -151,14 +151,14 @@ def test_set_projects_domain_area_and_category_emoji(tmp_path, settingsFile):
     add_category(log=log, dbConn=dbConn, domain="projects", areaRef="P10", title="Website",
                  description="", chosenEmoji="🌐").get()
 
-    label, newFolderPath = set_emoji(
+    label, newFolderPath, _ = set_emoji(
         log=log, dbConn=dbConn, ref="P10", newEmoji="🎯"
     ).get()
     assert label == "P10-19"
     assert os.path.basename(newFolderPath) == "P10_19_launches🎯"
     assert os.path.isdir(newFolderPath)
 
-    label, newFolderPath = set_emoji(
+    label, newFolderPath, _ = set_emoji(
         log=log, dbConn=dbConn, ref="P11", newEmoji="🖥️"
     ).get()
     assert label == "P11"
@@ -169,12 +169,12 @@ def test_set_projects_domain_area_and_category_emoji(tmp_path, settingsFile):
 
 def test_set_emoji_is_idempotent(populatedSystem):
     _rootPath, dbConn = populatedSystem
-    _label, firstPath = set_emoji(
+    _label, firstPath, _ = set_emoji(
         log=log, dbConn=dbConn, ref="A10", newEmoji="🏥"
     ).get()
     before = _all_indexed_paths(dbConn)
 
-    _label, secondPath = set_emoji(
+    _label, secondPath, _ = set_emoji(
         log=log, dbConn=dbConn, ref="A10", newEmoji="🏥"
     ).get()
 

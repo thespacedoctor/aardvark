@@ -39,9 +39,30 @@ INSTALL_COMMAND = "aardvark install_alfred"
 # RESULTS" RUNS THE SCRIPT FILTER ONCE, WITH AN EMPTY QUERY - THERE IS NO
 # SECOND PASS TO ADD THEM IN. `fd`, `open` AND `cd` EARN NO ROWS: THEY ARE
 # WHAT AN ENTITY ROW'S RETURN AND MODIFIERS ALREADY DO.
+# ORDER FOLLOWS THE SPEC'S COMMAND INVENTORY. THE SYNC AND MAINTENANCE
+# COMMANDS (`craft_sync`, ..., `repair_emoji`) JOIN THIS LIST IN SLICE 4.
 _COMMANDS = (
+    ("add_area", "Add a new Johnny Decimal area", "new area domain create"),
+    ("add_category", "Add a new Johnny Decimal category to an area", "new category create"),
     ("add_id", "Add a new Johnny Decimal ID to a category", "new id add create"),
+    ("add_project", "Create a new project in a project category", "new project create"),
+    ("archive", "Retire an entity and free its number", "archive retire remove delete"),
+    ("set_emoji", "Change an entity's emoji", "set emoji icon change"),
 )
+
+# THE `add_area` REFERENCE PICK IS A DOMAIN LETTER, NOT AN ENTITY: THERE IS
+# NOTHING IN THE INDEX TO CHOOSE FROM. THE THREE DOMAINS AND THE LETTER EACH
+# TAKES, IN THE ORDER `add_area`'S OWN HELP LISTS THEM.
+_DOMAIN_LETTERS = (
+    ("A", "Areas", "responsibilities you carry, with no end date"),
+    ("R", "Resources", "reference material and topics of interest"),
+    ("P", "Projects", "efforts with a defined end"),
+)
+
+# THE THREE JOHNNY DECIMAL ENTITY TYPES, FOR THE "ANY ENTITY" REFERENCE PICK
+# `archive` AND `set_emoji` USE. SYSTEM FOLDERS ARE NOT IN THE CONTRACT AND
+# SO ARE NEVER OFFERED HERE.
+_ENTITY_TYPES = ("area", "category", "id")
 
 # THE MIRRORS RETURN OPENS, IN THE ORDER `aardvark open` OPENS THEM.
 # FINDER HAS ITS OWN MODIFIER AND DROPBOX IS ONLY IN THE SUB-LIST.
@@ -272,9 +293,33 @@ def error_row(error):
     )
 
 
-def reference_payload(contract, entityType):
+def _contract_guard(contract):
     """
-    *the mutating flow's first step: the entities that are valid parents for the command*
+    *the one row to show instead of a step, when the contract itself is unusable*
+
+    **Key Arguments:**
+
+    - ``contract`` -- the parsed `aardvark fd --json` envelope
+
+    **Return:**
+
+    - ``payload`` -- a Script Filter response dict to return as-is, or `None` when the contract is fine
+    """
+    if contract.get("aardvark_json") != json_output.AARDVARK_JSON_VERSION:
+        return {
+            "items": [_install_row(
+                "This workflow is out of step with the installed aardvark",
+                f"Press ↩ to copy `{INSTALL_COMMAND}`, then run it in a terminal",
+            )],
+        }
+    if contract.get("error"):
+        return {"items": [error_row(contract["error"])]}
+    return None
+
+
+def reference_payload(contract, entityType, domain=None):
+    """
+    *the mutating flow's first step: the entities a command can target*
 
     A filtered view of the same `fd --json` envelope the main list is
     built from, so the pick costs one shell-out and no new contract.
@@ -282,7 +327,8 @@ def reference_payload(contract, entityType):
     **Key Arguments:**
 
     - ``contract`` -- the parsed `aardvark fd --json` envelope
-    - ``entityType`` -- the entity type that can be a parent, e.g. `category`
+    - ``entityType`` -- the entity type to list (`area`, `category`, `id`), or `None` for any of the three (`archive`, `set_emoji`)
+    - ``domain`` -- restrict to one domain, e.g. `projects` for `add_project`. Default `None`.
 
     **Return:**
 
@@ -295,48 +341,95 @@ def reference_payload(contract, entityType):
     payload = items.reference_payload(json.load(sys.stdin), "category")
     ```
     """
-    if contract.get("aardvark_json") != json_output.AARDVARK_JSON_VERSION:
-        return {
-            "items": [_install_row(
-                "This workflow is out of step with the installed aardvark",
-                f"Press ↩ to copy `{INSTALL_COMMAND}`, then run it in a terminal",
-            )],
-        }
+    guard = _contract_guard(contract)
+    if guard is not None:
+        return guard
 
-    if contract.get("error"):
-        return {"items": [error_row(contract["error"])]}
+    allowedTypes = {entityType} if entityType else set(_ENTITY_TYPES)
+    # WITH NO SINGLE TYPE, THE PICK NAMES A `<ref>` (WHAT `archive` AND
+    # `set_emoji` TAKE); WITH ONE, IT NAMES THAT COMMAND'S OWN POSITIONAL.
+    variableKey = entityType or "ref"
+    noun = entityType or "entity"
 
     rootPath = (contract.get("system") or {}).get("root_path")
     rows = []
     for entity in contract.get("entities") or []:
-        if entity.get("type") != entityType:
+        if entity.get("type") not in allowedTypes:
+            continue
+        if domain is not None and entity.get("domain") != domain:
             continue
         code = entity.get("code", "")
+        title = _entity_title(entity)
         # BUILT FROM THE ENTITY ROW'S *PIECES*, NOT BY MERGING OVER THE WHOLE
         # ROW. A MERGE LEAVES `mods`, `uid` AND `skipknowledge` BEHIND, WHICH
         # WOULD OFFER "REVEAL THE FOLDER IN FINDER" ON A ROW WHOSE ONLY JOB
-        # IS TO NAME A PARENT.
+        # IS TO NAME A REFERENCE.
         rows.append({
-            "title": _entity_title(entity),
+            "title": title,
             "subtitle": _relative_path(entity["folder_path"], rootPath),
             "match": _match_string(entity, rootPath),
             "arg": code,
             "valid": True,
             # `root_path` TRAVELS WITH THE PICK BECAUSE THE LATER STEPS NEED
             # IT AND MUST NOT FETCH THE WHOLE INDEX AGAIN TO GET IT.
+            # `folder_path` DOES THE SAME FOR `add_project`, WHOSE TEMPLATE
+            # STEP FINDS THE CATEGORY'S TEMPLATES FOLDER FROM IT; THE OTHER
+            # COMMANDS IGNORE IT. `entity_title` NAMES THE PICK ON `archive`
+            # AND `set_emoji`'S CONFIRMATION SCREEN AND SEEDS `set_emoji`'S
+            # EMOJI STEP - THE SAME KEY `entity_item` CARRIES ON THE MAIN LIST.
             "variables": {
-                "action": "reference", entityType: code, "root_path": rootPath or "",
+                "action": "reference", variableKey: code,
+                "root_path": rootPath or "", "folder_path": entity.get("folder_path", ""),
+                "entity_title": title,
             },
         })
 
     if not rows:
-        # A SCRIPT FILTER CANNOT RAISE, SO AN EMPTY PARENT LIST IS A ROW.
+        # A SCRIPT FILTER CANNOT RAISE, SO AN EMPTY LIST IS A ROW.
         return {"items": [_row(
-            f"No {entityType} to add this to yet",
-            f"Create a {entityType} first",
+            f"No {noun} to pick yet",
+            f"Create {'a ' + noun if noun != 'entity' else 'one'} first",
         )]}
 
     return {"items": rows}
+
+
+def domain_letter_payload(contract):
+    """
+    *`add_area`'s reference step: pick Areas, Resources or Projects*
+
+    Unlike every other reference pick this lists nothing from the index -
+    the three domains are fixed. It still takes the contract, only to read
+    `system.root_path` for the steps that follow and to surface the same
+    error row on a broken contract.
+
+    **Key Arguments:**
+
+    - ``contract`` -- the parsed `aardvark fd --json` envelope
+
+    **Return:**
+
+    - ``payload`` -- the Script Filter response dict
+
+    **Usage:**
+
+    ```python
+    from aardvark_jd.alfred import items
+    payload = items.domain_letter_payload(json.load(sys.stdin))
+    ```
+    """
+    guard = _contract_guard(contract)
+    if guard is not None:
+        return guard
+
+    rootPath = (contract.get("system") or {}).get("root_path")
+    return {"items": [
+        _row(
+            f"{name}", subtitle, arg=letter, valid=True,
+            variables={"action": "reference", "domainLetter": letter, "root_path": rootPath or ""},
+        )
+        for letter, name, subtitle in _DOMAIN_LETTERS
+    ]}
 
 
 def command_items():
@@ -387,16 +480,9 @@ def script_filter_payload(contract, workflowVersion=None):
     payload = items.script_filter_payload(json.load(sys.stdin), workflowVersion="1.2.3")
     ```
     """
-    if contract.get("aardvark_json") != json_output.AARDVARK_JSON_VERSION:
-        return {
-            "items": [_install_row(
-                "This workflow is out of step with the installed aardvark",
-                f"Press ↩ to copy `{INSTALL_COMMAND}`, then run it in a terminal",
-            )],
-        }
-
-    if contract.get("error"):
-        return {"items": [error_row(contract["error"])]}
+    guard = _contract_guard(contract)
+    if guard is not None:
+        return guard
 
     system = contract.get("system") or {}
     rootPath = system.get("root_path")

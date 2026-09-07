@@ -127,17 +127,17 @@ def test_the_script_filter_caches_with_a_loose_reload():
 
 def test_a_version_mismatch_prepends_a_warning_row_and_keeps_the_entities():
     payload = items.script_filter_payload(_contract(), workflowVersion="0.9.0")
-    assert len(payload["items"]) == 3
     assert "out of step" in payload["items"][0]["title"]
     assert "0.9.0" in payload["items"][0]["subtitle"]
     assert "1.2.3" in payload["items"][0]["subtitle"]
     assert payload["items"][1]["uid"] == "areas:A11.10"
+    assert payload["items"][-1]["title"] == "set_emoji"
 
 
 def test_a_matching_version_adds_no_warning_row():
     payload = items.script_filter_payload(_contract(), workflowVersion="1.2.3")
-    assert len(payload["items"]) == 2
     assert not any("out of step" in item["title"] for item in payload["items"])
+    assert payload["items"][0]["uid"] == "areas:A11.10"
 
 
 def test_an_unrecognised_contract_version_is_one_actionable_error_row():
@@ -268,7 +268,9 @@ def test_the_command_rows_share_the_one_list_with_the_entities():
         "entities": [],
     })
 
-    assert [row["title"] for row in payload["items"]] == ["add_id"]
+    assert [row["title"] for row in payload["items"]] == [
+        "add_area", "add_category", "add_id", "add_project", "archive", "set_emoji",
+    ]
 
 
 def test_a_command_row_says_it_starts_a_flow_rather_than_opening_anything():
@@ -279,7 +281,7 @@ def test_a_command_row_says_it_starts_a_flow_rather_than_opening_anything():
 
     assert row["valid"] is True
     assert row["variables"]["action"] == "command"
-    assert row["variables"]["command"] == "add_id"
+    assert row["variables"]["command"] == "add_area"
 
 
 def test_a_command_row_matches_on_more_than_its_own_name():
@@ -303,8 +305,10 @@ def test_the_entities_come_before_the_command_rows():
         }],
     })
 
-    assert payload["items"][0]["title"] != "add_id"
-    assert payload["items"][-1]["title"] == "add_id"
+    assert payload["items"][0]["title"] not in {
+        "add_area", "add_category", "add_id", "add_project", "archive", "set_emoji",
+    }
+    assert payload["items"][-1]["title"] == "set_emoji"
 
 
 # --------------------------------------------------------- the reference pick
@@ -392,3 +396,87 @@ def test_a_reference_row_still_shows_and_matches_what_the_entity_row_does():
 
     assert "A11" in row["title"] and "Doctors" in row["title"]
     assert "Doctors" in row["match"]
+
+
+# ------------------------------------------- slice 3: more reference-pick shapes
+
+
+def test_the_reference_pick_can_scope_to_one_domain():
+    """*`add_project` hangs a project off a `projects` category, never an `areas` one*"""
+    contract = _mixedContract()
+    contract["entities"] = [
+        _entity(id="areas:A11", code="A11", type="category", domain="areas", title="Doctors"),
+        _entity(id="projects:P11", code="P11", type="category", domain="projects", title="Website"),
+    ]
+
+    payload = items.reference_payload(contract, "category", domain="projects")
+
+    assert [item["arg"] for item in payload["items"]] == ["P11"]
+
+
+def test_the_reference_pick_can_take_any_entity_type():
+    """*`archive` and `set_emoji` target an area, a category or an ID alike*"""
+    payload = items.reference_payload(_mixedContract(), None)
+
+    assert [item["arg"] for item in payload["items"]] == ["A10-19", "A11", "A11.10"]
+
+
+def test_the_any_entity_reference_pick_carries_a_ref_variable():
+    payload = items.reference_payload(_mixedContract(), None)
+
+    assert payload["items"][0]["variables"]["ref"] == "A10-19"
+    assert payload["items"][0]["variables"]["root_path"] == "/root"
+
+
+def test_a_reference_row_carries_the_entity_title_forward():
+    """
+    *`archive` and `set_emoji` name the entity on their confirmation screen*
+
+    Without it their confirm screen reads "Archive A11.10" with no title,
+    on the one screen where naming the thing being destroyed matters most,
+    and `set_emoji`'s emoji step loses its `pick_emoji` seed.
+    """
+    rows = items.reference_payload(_mixedContract(), None)["items"]
+    row = next(r for r in rows if r["arg"] == "A11.10")
+
+    assert row["variables"]["entity_title"] == row["title"]
+    assert "A11.10" in row["variables"]["entity_title"]
+    assert "Cardiologist" in row["variables"]["entity_title"]
+
+
+# --------------------------------------------- the domain-letter reference pick
+
+
+def test_the_domain_letter_pick_offers_areas_resources_and_projects():
+    payload = items.domain_letter_payload(_contract(entities=[]))
+
+    assert [item["arg"] for item in payload["items"]] == ["A", "R", "P"]
+    assert "Areas" in payload["items"][0]["title"]
+
+
+def test_the_domain_letter_pick_carries_the_letter_and_the_root_path():
+    payload = items.domain_letter_payload(_contract(entities=[]))
+    row = payload["items"][0]
+
+    assert row["variables"]["domainLetter"] == "A"
+    assert row["variables"]["root_path"] == ROOT_PATH
+    assert row["variables"]["action"] == "reference"
+    assert row["valid"] is True
+
+
+def test_the_domain_letter_pick_forwards_a_contract_error():
+    contract = {
+        "aardvark_json": json_output.AARDVARK_JSON_VERSION,
+        "error": {"kind": "no_system", "message": "no aardvark system found"},
+    }
+
+    payload = items.domain_letter_payload(contract)
+
+    assert payload["items"][0]["title"] == "no aardvark system found"
+    assert payload["items"][0]["valid"] is False
+
+
+def test_the_domain_letter_pick_carries_no_entity_leftovers():
+    row = items.domain_letter_payload(_contract(entities=[]))["items"][0]
+
+    assert "mods" not in row and "uid" not in row and "skipknowledge" not in row

@@ -12,8 +12,7 @@ scriptDir="${0:A:h}"
 source "${scriptDir}/_resolve.sh"
 
 if ! aardvark_resolve; then
-    print -r -- "aardvark could not be found - run \`${AARDVARK_INSTALL_COMMAND}\` in a terminal"
-    exit 1
+    aardvark_emit_create_error "aardvark could not be found - run \`${AARDVARK_INSTALL_COMMAND}\` in a terminal"
 fi
 
 # THE `--json` FAILURE OBJECT ARRIVES ON STDOUT WITH A NON-ZERO EXIT, SO
@@ -21,8 +20,7 @@ fi
 result="$("$aardvarkBinary" add_id "${category:-}" "${title:-}" "${description:-}" --json 2>/dev/null)"
 
 if [ -z "$result" ]; then
-    print -r -- "aardvark returned nothing"
-    exit 1
+    aardvark_emit_create_error "aardvark returned nothing"
 fi
 
 print -r -- "$result"

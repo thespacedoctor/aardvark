@@ -81,7 +81,7 @@ class set_emoji(object):
 
     ```python
     from aardvark_jd.set_emoji import set_emoji
-    label, folderPath = set_emoji(
+    label, folderPath, _ = set_emoji(
         log=log, dbConn=dbConn, ref="A10-19", newEmoji="🏥"
     ).get()
     ```
@@ -102,6 +102,7 @@ class set_emoji(object):
 
         - ``label`` -- a human-readable label for what was retargeted
         - ``folderPath`` -- the target folder's new absolute path
+        - ``details`` -- what the JSON contract reports: the `emoji_source`, always `chosen` here because `set_emoji` takes the emoji as a positional
         """
         self.log.debug("starting the ``get`` method")
 
@@ -113,7 +114,11 @@ class set_emoji(object):
             label, folderPath = self._set_category_emoji()
 
         self.log.debug("completed the ``get`` method")
-        return label, folderPath
+        # `set_emoji <ref> <emoji>` HAS NO SUGGESTER PATH: THE EMOJI IS ALWAYS
+        # EXPLICIT, WHETHER TYPED AT A TERMINAL OR SETTLED BY ALFRED'S EMOJI
+        # STEP. THE FIELD IS REPORTED ANYWAY SO EVERY MUTATING RESULT ALFRED
+        # RENDERS HAS THE SAME SHAPE.
+        return label, folderPath, {"emoji_source": "chosen"}
 
     def _resolve_domain(self, ref):
         """

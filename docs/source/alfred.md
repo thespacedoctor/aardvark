@@ -54,6 +54,22 @@ If the title contains a word the spell-checker does not recognise, the confirmat
 
 **This differs from the terminal on purpose.** At the terminal, declining a suggestion teaches aardvark that the word is real, so it stops asking. Here, declining is what ↩ already does, so that rule would teach a word every time you pressed Return without reading. Teaching therefore needs its own key: **⌘↩ on a correction row** records the word, and it is never flagged again.
 
+## The other mutating commands
+
+Every mutating command has a row in the `av` list, below the entities, and every one runs the same shape as `add_id`: pick a reference, supply what the command needs, confirm, and land on a success surface. The confirmation screen is always the commit - no earlier ↩ writes anything - and **Create as typed** (or the single action row) is always the default.
+
+| Command | Reference pick | Then | Notes |
+| --- | --- | --- | --- |
+| `add_area` | Areas, Resources or Projects | `title, description`, then an emoji step, then confirm | The emoji step offers the offline pick on ↩, or type an emoji or a word to search the index. |
+| `add_category` | The parent area | `title, description`, then an emoji step, then confirm | Same emoji step as `add_area`. |
+| `add_project` | A category in the projects domain | Choose a template, then a title-only field, then confirm | The template step lists **Blank project** first, then any `.zip` in the category's `04_templates` folder. `add_project` takes a title and nothing else, so there is no comma split. |
+| `archive` | Any area, category or ID | Confirm | Archiving moves the folder to the nearest archive and frees its Johnny Decimal number. This is one-way, so the confirmation screen carries a **Choose something else to archive** row back to the pick. |
+| `set_emoji` | Any area, category or ID | An emoji step, then confirm | The emoji step is seeded with the offline pick for that entity. |
+
+The argument and template steps carry a back row the same way `add_id` does: it leads while the field is empty and steps below the parse once you have typed something. Escape always discards the whole run.
+
+If a create step cannot run - the `aardvark` command is missing, or it returns nothing - the success screen shows that as a single row rather than an empty list.
+
 ## Configuration
 
 Two settings, under Alfred's **Configure Workflow…**:

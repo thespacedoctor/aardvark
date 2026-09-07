@@ -115,11 +115,29 @@ def test_tty_reprompts_after_an_unusable_reply(interactive, monkeypatch, capsys)
     assert "cannot be used in a folder name" in capsys.readouterr().out
 
 
+# ------------------------------------------------------------- emoji_source
+
+
+def test_resolve_with_source_labels_a_supplied_emoji_chosen():
+    emoji, source = emoji_picker.resolve_emoji_with_source("Doctors", chosenEmoji="🩺")
+    assert (emoji, source) == ("🩺", "chosen")
+
+
+def test_resolve_with_source_labels_the_offline_pick_offline(nonInteractive):
+    emoji, source = emoji_picker.resolve_emoji_with_source("Hospital")
+    assert (emoji, source) == ("🏥", "offline")
+
+
+def test_resolve_with_source_calls_the_fallback_offline_not_deferred(nonInteractive):
+    emoji, source = emoji_picker.resolve_emoji_with_source("Xyzzyqwerty Blergh")
+    assert (emoji, source) == (emoji_picker.FALLBACK_EMOJI, "offline")
+
+
 # -------------------------------------------------- wired through the workers
 
 
 def test_add_area_honours_the_chosen_emoji(systemDbConn, interactive):
-    _code, folderPath = add_area(
+    _code, folderPath, _ = add_area(
         log=log, dbConn=systemDbConn, domain="areas", title="Health",
         description="...", chosenEmoji="🩺",
     ).get()
@@ -131,7 +149,7 @@ def test_add_area_honours_the_chosen_emoji(systemDbConn, interactive):
 def test_add_category_honours_the_chosen_emoji(systemDbConn, interactive):
     add_area(log=log, dbConn=systemDbConn, domain="areas", title="Health",
              description="...", chosenEmoji="🩺").get()
-    _code, folderPath = add_category(
+    _code, folderPath, _ = add_category(
         log=log, dbConn=systemDbConn, domain="areas", areaRef="A10", title="Doctors",
         description="...", chosenEmoji="👩‍⚕️",
     ).get()
@@ -141,7 +159,30 @@ def test_add_category_honours_the_chosen_emoji(systemDbConn, interactive):
 
 
 def test_non_interactive_worker_takes_the_offline_pick(systemDbConn, nonInteractive):
-    _code, folderPath = add_area(
+    _code, folderPath, _ = add_area(
         log=log, dbConn=systemDbConn, domain="areas", title="Hospital", description="...",
     ).get()
     assert os.path.basename(folderPath) == "A10_19_hospital🏥"
+
+
+# ------------------------------------------------- the emoji-index free-text search
+
+
+def test_search_emoji_finds_matches_for_a_keyword():
+    matches = emoji_picker.search_emoji("bicycle")
+    assert any(keyword == "bicycle" for _emoji, keyword in matches)
+
+
+def test_search_emoji_prefers_a_prefix_match_over_a_substring_one():
+    matches = emoji_picker.search_emoji("book")
+    assert matches
+    assert matches[0][1].startswith("book")
+
+
+def test_search_emoji_is_empty_for_a_blank_or_symbol_query():
+    assert emoji_picker.search_emoji("") == []
+    assert emoji_picker.search_emoji("   ") == []
+
+
+def test_search_emoji_honours_the_limit():
+    assert len(emoji_picker.search_emoji("a", limit=3)) <= 3

@@ -33,7 +33,7 @@ def dbConnWithProjectCategory(tmp_path):
 
 def test_blank_scaffold(dbConnWithProjectCategory):
     conn, _ = dbConnWithProjectCategory
-    code, title, folderPath, templateUsed = add_project(
+    code, title, folderPath, templateUsed, _ = add_project(
         log=log, dbConn=conn, categoryRef="P11", templateName="blank", projectTitle="My Project"
     ).get()
 
@@ -58,7 +58,7 @@ def test_zip_template_extraction(dbConnWithProjectCategory, tmp_path):
     with zipfile.ZipFile(customZipPath, "w") as zipHandle:
         zipHandle.writestr("NOTES.md", "hello")
 
-    _code, _title, folderPath, templateUsed = add_project(
+    _code, _title, folderPath, templateUsed, _ = add_project(
         log=log, dbConn=conn, categoryRef="P11", templateName="custom", projectTitle="Custom Project"
     ).get()
 
@@ -71,7 +71,7 @@ def test_zip_template_accepts_name_without_extension(dbConnWithProjectCategory):
     with zipfile.ZipFile(f"{templatesFolder}/custom.zip", "w") as zipHandle:
         zipHandle.writestr("NOTES.md", "hello")
 
-    _code, _title, _folderPath, templateUsed = add_project(
+    _code, _title, _folderPath, templateUsed, _ = add_project(
         log=log, dbConn=conn, categoryRef="P11", templateName="custom", projectTitle="Another"
     ).get()
     assert templateUsed == "custom.zip"
@@ -92,7 +92,7 @@ def test_unknown_category_raises_clear_error(dbConnWithProjectCategory):
 def test_non_tty_with_no_template_defaults_to_blank(dbConnWithProjectCategory, monkeypatch):
     conn, _ = dbConnWithProjectCategory
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
-    _code, _title, folderPath, templateUsed = add_project(
+    _code, _title, folderPath, templateUsed, _ = add_project(
         log=log, dbConn=conn, categoryRef="P11", templateName=None, projectTitle="Headless Project"
     ).get()
     assert templateUsed == "blank"
@@ -116,7 +116,7 @@ def test_category_without_templates_scaffolding_defaults_to_blank(dbConnWithProj
     conn.commit()
     monkeypatch.setattr("sys.stdin.isatty", lambda: False)
 
-    _code, _title, folderPath, templateUsed = add_project(
+    _code, _title, folderPath, templateUsed, _ = add_project(
         log=log, dbConn=conn, categoryRef="P11", templateName=None, projectTitle="No Scaffold Project"
     ).get()
     assert templateUsed == "blank"
@@ -131,10 +131,33 @@ def test_an_accepted_correction_reaches_the_project_folder_and_title(
     monkeypatch.setattr("sys.stdin.isatty", lambda: True)
     monkeypatch.setattr("builtins.input", lambda prompt="": "y")
 
-    _code, title, folderPath, _templateUsed = add_project(
+    _code, title, folderPath, _templateUsed, _ = add_project(
         log=log, dbConn=conn, categoryRef="P11", templateName="blank",
         projectTitle="Aadvark", settings={"system": {"root_path": rootPath}},
     ).get()
 
     assert title == "Aardvark"
     assert "aardvark" in os.path.basename(folderPath).lower()
+
+
+# ------------------------------------- what the worker reports back to Alfred
+
+
+def test_add_project_details_carry_the_suspect_tokens_and_no_emoji_source(
+    dbConnWithProjectCategory, monkeypatch,
+):
+    """*projects are IDs - no emoji step - so `details` never carries an `emoji_source`*"""
+    conn, _ = dbConnWithProjectCategory
+    monkeypatch.setattr("sys.stdin.isatty", lambda: False)
+    rootPath = os.path.dirname(
+        paths.resolve(conn, "root.projects")
+    )
+
+    _code, _title, _folderPath, _templateUsed, details = add_project(
+        log=log, dbConn=conn, categoryRef="P11", templateName="blank", projectTitle="Aadvark",
+        settings={"system": {"root_path": rootPath}}, interactive=False,
+    ).get()
+
+    assert details["corrections"] == []
+    assert details["suggestions"] == [{"token": "Aadvark", "index": 0, "suggested": "aardvark"}]
+    assert "emoji_source" not in details

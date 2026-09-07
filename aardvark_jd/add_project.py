@@ -41,19 +41,21 @@ class add_project(object):
 
     ```python
     from aardvark_jd.add_project import add_project
-    code, title, folderPath, templateUsed = add_project(
+    code, title, folderPath, templateUsed, details = add_project(
         log=log, dbConn=dbConn, categoryRef="P11", projectTitle="My Project",
     ).get()
     ```
     """
 
-    def __init__(self, log, dbConn, categoryRef, projectTitle, templateName=None, settings=None):
+    def __init__(self, log, dbConn, categoryRef, projectTitle, templateName=None, settings=None,
+                 interactive=None):
         self.log = log
         self.dbConn = dbConn
         self.categoryRef = categoryRef
         self.projectTitle = projectTitle
         self.templateName = templateName
         self.settings = settings
+        self.interactive = interactive
 
     def get(self):
         """
@@ -65,6 +67,7 @@ class add_project(object):
         - ``title`` -- the new project's title
         - ``folderPath`` -- the new project folder's absolute path
         - ``templateUsed`` -- `"blank"` or the template zip's basename
+        - ``details`` -- what the JSON contract reports about the title spell-check: `corrections` applied and `suggestions` still outstanding
         """
         self.log.debug("starting the ``get`` method")
 
@@ -84,7 +87,10 @@ class add_project(object):
 
         templateChoice = self._resolve_template_choice(templateZips)
         # SEE `add_area.get` - CHECKED BEFORE ANY WRITE.
-        title = spell_check.checked_title(self.projectTitle, self.settings, self.log)
+        details = spell_check.checked_title_details(
+            self.projectTitle, self.settings, self.log, interactive=self.interactive,
+        )
+        title = details["title"]
 
         itemNumber = folders.next_id_number(self.dbConn, "projects", category)
         folderName = folders.id_folder_name("projects", acNumber, itemNumber, title)
@@ -105,7 +111,11 @@ class add_project(object):
         code = codes.format_id_code("projects", acNumber, itemNumber)
 
         self.log.debug("completed the ``get`` method")
-        return code, title, folderPath, templateUsed
+        # SEE `add_id.get`.
+        return code, title, folderPath, templateUsed, {
+            "corrections": details["corrections"],
+            "suggestions": details["suggestions"],
+        }
 
     def _resolve_template_choice(self, templateZips):
         """
