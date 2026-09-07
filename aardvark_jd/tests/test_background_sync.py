@@ -7,6 +7,7 @@ import requests
 
 from aardvark_jd import background_sync, db, http_retry
 from aardvark_jd.background_sync import SyncBusy
+from aardvark_jd.craft_client import CraftApiError
 
 log = logging.getLogger("test_background_sync")
 log.addHandler(logging.NullHandler())
@@ -42,6 +43,37 @@ def test_a_429_message_is_classified_rate_limited():
 def test_an_auth_failure_is_classified_auth():
     error = RuntimeError("craft API GET /folders failed (401): invalid token")
     assert background_sync.classify_failure(error) == "auth"
+
+
+def test_a_craft_not_found_failure_is_classified_not_found():
+    error = CraftApiError(
+        "craft API GET /blocks failed (404): Block not found",
+        method="GET", path="/blocks", statusCode=404,
+    )
+    assert background_sync.classify_failure(error) == "not-found"
+
+
+def test_a_404_that_reads_as_an_auth_failure_is_classified_auth():
+    # A REVOKED CRAFT CONNECTION RETURNS 404 FOR EVERY PATH WITH AN AUTH BODY;
+    # CLASSING IT `not-found` WOULD TELL THE USER TO RETRY A TOKEN THAT IS DEAD.
+    error = CraftApiError(
+        "craft API GET /blocks failed (404): invalid token",
+        method="GET", path="/blocks", statusCode=404,
+    )
+    assert background_sync.classify_failure(error) == "auth"
+
+
+def test_a_craft_api_error_that_is_not_a_404_still_uses_the_message():
+    rateLimited = CraftApiError(
+        "craft API POST /blocks failed (429): Rate limit exceeded",
+        method="POST", path="/blocks", statusCode=429,
+    )
+    assert background_sync.classify_failure(rateLimited) == "rate-limited"
+
+    serverError = CraftApiError(
+        "craft API POST /blocks failed (500): boom", method="POST", path="/blocks", statusCode=500,
+    )
+    assert background_sync.classify_failure(serverError) == "unknown"
 
 
 def test_an_unrecognised_failure_is_classified_unknown():

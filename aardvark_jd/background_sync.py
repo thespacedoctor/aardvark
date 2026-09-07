@@ -51,6 +51,7 @@ import time
 import requests
 
 from aardvark_jd import db, http_retry
+from aardvark_jd.craft_client import CraftApiError
 
 # A PID MUST FIT A C `int` OR `os.kill` RAISES `OverflowError` RATHER THAN
 # REPORTING THE PROCESS MISSING.
@@ -87,7 +88,7 @@ def classify_failure(error):
 
     **Return:**
 
-    - ``failureClass`` -- `rate-limited`, `auth`, `network` or `unknown`
+    - ``failureClass`` -- `rate-limited`, `auth`, `network`, `not-found` or `unknown`
     """
     if isinstance(error, http_retry.BackoffBudgetExhausted):
         return "rate-limited"
@@ -99,6 +100,12 @@ def classify_failure(error):
         return "rate-limited"
     if "401" in message or "403" in message or "unauthor" in message or "token" in message:
         return "auth"
+    # A STRUCTURED 404 IS BENIGN DRIFT - A DOCUMENT DELETED IN CRAFT - BUT ONLY
+    # ONCE THE MESSAGE HAS BEEN RULED OUT AS AN AUTH FAILURE FIRST: A REVOKED
+    # CRAFT CONNECTION RETURNS 404 FOR EVERY PATH, AND `not-found` READS TO THE
+    # USER AS "JUST RETRY" WHERE `auth` TELLS THEM THE TOKEN IS DEAD.
+    if isinstance(error, CraftApiError) and error.statusCode == 404:
+        return "not-found"
     if "timed out" in message or "connection" in message:
         return "network"
     return "unknown"

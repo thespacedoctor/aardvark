@@ -4,6 +4,7 @@ import os
 import pytest
 import yaml
 
+from aardvark_jd import background_sync
 from aardvark_jd import craft_sync as craft_sync_module
 from aardvark_jd import db, paths
 from aardvark_jd.add_area import add_area
@@ -521,6 +522,74 @@ def test_craft_sync_restores_a_hand_deleted_link_row(dbConn, craftSettings, fake
     assert all(item["markdown"].startswith("- ") for item in healed[1:])
 
 
+def test_craft_sync_replaces_a_missing_tracked_link_row_block(dbConn, craftSettings, fakeClient, monkeypatch):
+    """*a link-row block deleted outside aardvark does not abort its later rewrite*"""
+    add_area(log=log, dbConn=dbConn, domain="areas", title="Health", description="d1").get()
+    add_category(log=log, dbConn=dbConn, domain="areas", areaRef="A10", title="Doctors", description="d2").get()
+    add_id(log=log, dbConn=dbConn, domain="areas", categoryRef="A11", title="Cardiologist", description="d3").get()
+    craft_sync(log=log, dbConn=dbConn, settings=craftSettings).get()
+    link = db.get_craft_link(dbConn, "id:index", "1")
+    missingBlockId = link["craft_block_id"]
+
+    monkeypatch.setattr(craft_sync_module.doc_links, "hookmark_url", lambda folderPath: "hook://changed")
+    realDelete = fakeClient.delete_blocks
+
+    def delete_blocks_or_not_found(blockIds):
+        if missingBlockId in blockIds:
+            realDelete(blockIds)
+            raise CraftApiError(
+                "craft API DELETE /blocks failed (404): Block not found",
+                method="DELETE", path="/blocks", statusCode=404,
+            )
+        realDelete(blockIds)
+
+    fakeClient.delete_blocks = delete_blocks_or_not_found
+
+    craft_sync(log=log, dbConn=dbConn, settings=craftSettings).get()
+
+    recoveredLink = db.get_craft_link(dbConn, "id:index", "1")
+    assert recoveredLink["craft_block_id"] != missingBlockId
+    assert "hook://changed" in recoveredLink["links_markdown"]
+
+
+def test_craft_sync_recovers_a_stale_link_row_document_id_after_a_post_not_found(
+    dbConn, craftSettings, fakeClient, monkeypatch,
+):
+    """*a link-row write creates a fresh document after Craft rejects its stored page id*"""
+    add_area(log=log, dbConn=dbConn, domain="areas", title="Health", description="d1").get()
+    add_category(log=log, dbConn=dbConn, domain="areas", areaRef="A10", title="Doctors", description="d2").get()
+    add_id(log=log, dbConn=dbConn, domain="areas", categoryRef="A11", title="Cardiologist", description="d3").get()
+    craft_sync(log=log, dbConn=dbConn, settings=craftSettings).get()
+    link = db.get_craft_link(dbConn, "id:index", "1")
+    originalId = link["craft_document_id"]
+
+    dbConn.execute(
+        "UPDATE craft_links SET craft_document_id = ? WHERE entity_type = ? AND entity_key = ?",
+        ("stale-document", "id:index", "1"),
+    )
+    dbConn.commit()
+    monkeypatch.setattr(craft_sync_module.doc_links, "hookmark_url", lambda folderPath: "hook://changed")
+    realAdd = fakeClient.add_block
+
+    def add_block_or_not_found(documentId, markdown, position="end"):
+        if documentId == "stale-document":
+            raise CraftApiError(
+                "craft API POST /blocks failed (404): Block not found",
+                method="POST", path="/blocks", statusCode=404,
+            )
+        return realAdd(documentId, markdown, position=position)
+
+    fakeClient.add_block = add_block_or_not_found
+
+    summary = craft_sync(log=log, dbConn=dbConn, settings=craftSettings).get()
+
+    recoveredLink = db.get_craft_link(dbConn, "id:index", "1")
+    assert recoveredLink["craft_document_id"] not in {"stale-document", originalId}
+    assert any(document[0] == recoveredLink["craft_document_id"] for document in fakeClient.documents)
+    assert summary["documents_repaired"] == 1
+    assert "hook://changed" in recoveredLink["links_markdown"]
+
+
 def test_index_comparison_is_exact_when_no_link_row_is_present(dbConn, craftSettings, fakeClient, monkeypatch):
     """*with no link row, a removed first child is still detected and repaired*
 
@@ -704,6 +773,204 @@ def test_craft_sync_relinks_the_adopted_document(dbConn, craftSettings, fakeClie
 
     after = db.get_craft_link(dbConn, "system_folder", "areas.system.00_index")["craft_document_id"]
     assert after == before
+
+
+def test_craft_sync_recovers_a_stale_index_document_id_by_creating_a_replacement_never_adopting(
+    dbConn, craftSettings, fakeClient,
+):
+    """*a 404 on a persisted index document id creates a fresh document, never binding a same-title one*
+
+    A same-title document sitting in the folder is not proof of ownership.
+    Adopting it would let the index writer delete an unrelated user page's
+    content wholesale, so recovery always creates a new document instead.
+    """
+    craft_sync(log=log, dbConn=dbConn, settings=craftSettings).get()
+    link = db.get_craft_link(dbConn, "system_folder", "areas.system.00_index")
+    sameTitleId = link["craft_document_id"]
+    sameTitleContentBefore = list(fakeClient._documentContent[sameTitleId])
+
+    # MODEL A DOCUMENT ID CRAFT HAS REMOVED WHILE A SAME-TITLE DOCUMENT REMAINS FILED.
+    dbConn.execute(
+        "UPDATE craft_links SET craft_document_id = ?, craft_block_id = ?, craft_url = ?, links_markdown = ? "
+        "WHERE entity_type = ? AND entity_key = ?",
+        ("stale-document", "stale-block", "https://craft.example/doc/stale-document", "stale link row", "system_folder", "areas.system.00_index"),
+    )
+    dbConn.commit()
+    originalGetBlock = fakeClient.get_block
+
+    def get_block_or_not_found(blockId):
+        if blockId == "stale-document":
+            raise CraftApiError(
+                "craft API GET /blocks failed (404): Block not found",
+                method="GET", path="/blocks", statusCode=404,
+            )
+        return originalGetBlock(blockId)
+
+    fakeClient.get_block = get_block_or_not_found
+
+    summary = craft_sync(log=log, dbConn=dbConn, settings=craftSettings).get()
+
+    recoveredLink = db.get_craft_link(dbConn, "system_folder", "areas.system.00_index")
+    newId = recoveredLink["craft_document_id"]
+    assert newId not in {"stale-document", sameTitleId}
+    assert any(document[0] == newId for document in fakeClient.documents)
+    assert summary["documents_repaired"] == 1
+    assert recoveredLink["craft_block_id"] != "stale-block"
+    assert recoveredLink["craft_url"] != "https://craft.example/doc/stale-document"
+    assert recoveredLink["links_markdown"] != "stale link row"
+    # THE SAME-TITLE DOCUMENT ALREADY IN THE FOLDER IS LEFT EXACTLY AS IT WAS.
+    assert any(document[0] == sameTitleId for document in fakeClient.documents)
+    assert fakeClient._documentContent[sameTitleId] == sameTitleContentBefore
+
+
+def test_craft_sync_recovers_a_stale_index_document_id_by_creating_a_replacement(
+    dbConn, craftSettings, fakeClient,
+):
+    """*a stale index document without a same-title replacement is recreated once*"""
+    craft_sync(log=log, dbConn=dbConn, settings=craftSettings).get()
+    link = db.get_craft_link(dbConn, "system_folder", "areas.system.00_index")
+    originalId = link["craft_document_id"]
+
+    fakeClient.documents = [document for document in fakeClient.documents if document[0] != originalId]
+    del fakeClient._documentContent[originalId]
+    dbConn.execute(
+        "UPDATE craft_links SET craft_document_id = ? WHERE entity_type = ? AND entity_key = ?",
+        ("stale-document", "system_folder", "areas.system.00_index"),
+    )
+    dbConn.commit()
+    originalGetBlock = fakeClient.get_block
+
+    def get_block_or_not_found(blockId):
+        if blockId == "stale-document":
+            raise CraftApiError(
+                "craft API GET /blocks failed (404): Block not found",
+                method="GET", path="/blocks", statusCode=404,
+            )
+        return originalGetBlock(blockId)
+
+    fakeClient.get_block = get_block_or_not_found
+
+    craft_sync(log=log, dbConn=dbConn, settings=craftSettings).get()
+
+    recoveredLink = db.get_craft_link(dbConn, "system_folder", "areas.system.00_index")
+    assert recoveredLink["craft_document_id"] not in {originalId, "stale-document"}
+    assert any(document[0] == recoveredLink["craft_document_id"] for document in fakeClient.documents)
+
+
+def test_craft_sync_aborts_after_too_many_stale_document_ids(dbConn, craftSettings, fakeClient):
+    """*a 404 on every index document is a dead or misdirected connection, not drift - fail loud, never loop*"""
+    add_area(log=log, dbConn=dbConn, domain="areas", title="Health", description="d1").get()
+    for _ in range(9):
+        add_category(log=log, dbConn=dbConn, domain="areas", areaRef="A10", title="Doctors", description="d").get()
+    add_area(log=log, dbConn=dbConn, domain="resources", title="Refs", description="d1").get()
+    for _ in range(4):
+        add_category(log=log, dbConn=dbConn, domain="resources", areaRef="R10", title="Books", description="d").get()
+    craft_sync(log=log, dbConn=dbConn, settings=craftSettings).get()
+
+    def get_block_always_404(blockId):
+        raise CraftApiError(
+            "craft API GET /blocks failed (404): Block not found",
+            method="GET", path="/blocks", statusCode=404,
+        )
+
+    fakeClient.get_block = get_block_always_404
+    documentsBefore = len(fakeClient.documents)
+
+    with pytest.raises(CraftApiError, match="repair aborted") as raised:
+        craft_sync(log=log, dbConn=dbConn, settings=craftSettings).get()
+
+    created = len(fakeClient.documents) - documentsBefore
+    assert created == craft_sync_module._MAX_DOCUMENT_REPAIRS_PER_RUN
+    # THE ABORT IS A SYSTEMIC FAULT NEEDING ATTENTION, NEVER A TRANSIENT ONE:
+    # ITS WORDING MUST NOT MAKE `classify_failure` CALL IT `network` OR `not-found`.
+    assert background_sync.classify_failure(raised.value) == "unknown"
+
+
+def test_a_second_failure_during_link_row_recovery_leaves_a_tracked_replacement(
+    dbConn, craftSettings, fakeClient, monkeypatch,
+):
+    """*if the retry `add_block` also fails, `craft_links` already points at the fresh tracked document*
+
+    The core promise: a replacement is created and recorded before the
+    retry, so a later API failure never leaves the row pointing at the
+    dead document - the next run resumes from the recorded replacement.
+    """
+    add_area(log=log, dbConn=dbConn, domain="areas", title="Health", description="d1").get()
+    add_category(log=log, dbConn=dbConn, domain="areas", areaRef="A10", title="Doctors", description="d2").get()
+    add_id(log=log, dbConn=dbConn, domain="areas", categoryRef="A11", title="Cardiologist", description="d3").get()
+    craft_sync(log=log, dbConn=dbConn, settings=craftSettings).get()
+    monkeypatch.setattr(craft_sync_module.doc_links, "hookmark_url", lambda folderPath: "hook://changed")
+
+    dbConn.execute(
+        "UPDATE craft_links SET craft_document_id = ? WHERE entity_type = ? AND entity_key = ?",
+        ("stale-document", "id:index", "1"),
+    )
+    dbConn.commit()
+    knownDocuments = {document[0] for document in fakeClient.documents}
+    realAdd = fakeClient.add_block
+
+    def add_block_that_keeps_failing(documentId, markdown, position="end"):
+        if documentId == "stale-document":
+            raise CraftApiError(
+                "craft API POST /blocks failed (404): Block not found",
+                method="POST", path="/blocks", statusCode=404,
+            )
+        if documentId not in knownDocuments:
+            # THE FRESHLY CREATED REPLACEMENT: THE RETRY FAILS TOO.
+            raise CraftApiError("craft API POST /blocks failed (429): rate limited on the retry")
+        return realAdd(documentId, markdown, position=position)
+
+    fakeClient.add_block = add_block_that_keeps_failing
+
+    with pytest.raises(CraftApiError):
+        craft_sync(log=log, dbConn=dbConn, settings=craftSettings).get()
+
+    link = db.get_craft_link(dbConn, "id:index", "1")
+    assert link["craft_document_id"] != "stale-document"
+    assert any(document[0] == link["craft_document_id"] for document in fakeClient.documents)
+
+
+def test_an_index_content_delete_404_still_surfaces(dbConn, craftSettings, fakeClient):
+    """*`_write_index_content`'s own bulk delete is deliberately not routed through the 404-swallowing wrapper*"""
+    add_area(log=log, dbConn=dbConn, domain="areas", title="Health", description="d1").get()
+    add_category(log=log, dbConn=dbConn, domain="areas", areaRef="A10", title="Doctors", description="d2").get()
+    add_id(log=log, dbConn=dbConn, domain="areas", categoryRef="A11", title="Cardiologist", description="d3").get()
+    craft_sync(log=log, dbConn=dbConn, settings=craftSettings).get()
+    add_id(log=log, dbConn=dbConn, domain="areas", categoryRef="A11", title="Dermatologist", description="d4").get()
+
+    def delete_404(blockIds):
+        raise CraftApiError(
+            "craft API DELETE /blocks failed (404): Block not found",
+            method="DELETE", path="/blocks", statusCode=404,
+        )
+
+    fakeClient.delete_blocks = delete_404
+
+    with pytest.raises(CraftApiError):
+        craft_sync(log=log, dbConn=dbConn, settings=craftSettings).get()
+
+
+def test_craft_sync_preserves_a_document_link_after_a_non_not_found_read_failure(
+    dbConn, craftSettings, fakeClient,
+):
+    """*only a structured GET /blocks 404 can replace a persisted document link*"""
+    craft_sync(log=log, dbConn=dbConn, settings=craftSettings).get()
+    link = db.get_craft_link(dbConn, "system_folder", "areas.system.00_index")
+    before = tuple(link[column] for column in ("craft_document_id", "craft_block_id", "craft_url", "links_markdown"))
+
+    def get_block_that_fails(blockId):
+        raise CraftApiError(
+            "craft API GET /blocks failed (500): response text includes (404)",
+            method="GET", path="/blocks", statusCode=500,
+        )
+
+    fakeClient.get_block = get_block_that_fails
+
+    with pytest.raises(CraftApiError):
+        craft_sync(log=log, dbConn=dbConn, settings=craftSettings).get()
+
+    after = db.get_craft_link(dbConn, "system_folder", "areas.system.00_index")
+    assert tuple(after[column] for column in ("craft_document_id", "craft_block_id", "craft_url", "links_markdown")) == before
 
 
 def test_a_craft_api_without_document_listing_still_creates(dbConn, craftSettings, fakeClient, monkeypatch):

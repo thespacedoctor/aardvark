@@ -263,8 +263,12 @@ def test_request_failure_raises_craft_api_error(monkeypatch):
 
     monkeypatch.setattr(requests.Session, "request", fakeRequest)
 
-    with pytest.raises(CraftApiError):
+    with pytest.raises(CraftApiError) as error:
         CraftClient(apiUrl=_API_URL, apiToken="tok").create_folder("Areas")
+    assert error.value.method == "POST"
+    assert error.value.path == "/folders"
+    assert error.value.statusCode == 500
+    assert error.value.responseText == "boom"
 
 
 def test_a_transient_500_is_retried_then_succeeds(monkeypatch):
