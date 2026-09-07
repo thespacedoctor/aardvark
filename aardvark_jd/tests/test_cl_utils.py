@@ -94,6 +94,58 @@ def test_main_end_to_end(isolatedHome, monkeypatch, capsys):
     assert "A11.10" in capsys.readouterr().out
 
 
+def _spy_full_help(monkeypatch):
+    """*replace `help_text.full_help` with a recorder, and return the call list*"""
+    calls = []
+
+    def _record(docString):
+        calls.append(docString)
+        return "FULL HELP"
+
+    monkeypatch.setattr(cl_utils.help_text, "full_help", _record)
+    return calls
+
+
+def _stop_at_setup(*args, **kwargs):
+    """*a `tools` stand-in that halts `main` before any real settings or DB work*"""
+    raise RuntimeError("reached setup")
+
+
+@pytest.mark.parametrize("argv", [
+    ["aardvark", "--help-all"],
+    ["aardvark", "--help-all", "--json"],
+])
+def test_help_all_as_the_leading_flag_prints_the_full_help(monkeypatch, capsys, argv):
+    fullHelpCalls = _spy_full_help(monkeypatch)
+    monkeypatch.setattr(cl_utils.sys, "argv", argv)
+
+    cl_utils.main()
+
+    assert fullHelpCalls == [cl_utils.__doc__]
+    assert "FULL HELP" in capsys.readouterr().out
+
+
+def test_help_all_in_a_value_position_is_not_treated_as_help(isolatedHome, monkeypatch, capsys):
+    """
+    *the mutating flows pass free text through as positionals*
+
+    A bare `"--help-all" in argv` check fired on that text, printed 6 KB
+    of help as the `--json` contract, and deadscreened the Alfred success
+    step on the `json.load` that followed.
+    """
+    fullHelpCalls = _spy_full_help(monkeypatch)
+    monkeypatch.setattr(cl_utils, "tools", _stop_at_setup)
+    monkeypatch.setattr(
+        cl_utils.sys, "argv", ["aardvark", "add_id", "A11", "--help-all", "--json"],
+    )
+
+    with pytest.raises(RuntimeError, match="reached setup"):
+        cl_utils.main()
+
+    assert fullHelpCalls == []
+    assert "FULL HELP" not in capsys.readouterr().out
+
+
 def test_main_reports_missing_system(isolatedHome, capsys):
     with pytest.raises(SystemExit) as excInfo:
         cl_utils.main(docopt(doc, ["fd", "anything"]))

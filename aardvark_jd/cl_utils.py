@@ -151,7 +151,11 @@ def main(arguments=None):
         if argv[:1] == ["shell_init"]:
             print(completion.shell_init_script(argv[1] if len(argv) > 1 else ""))
             return
-        if "--help-all" in argv:
+        # `--help-all` IS A LEADING FLAG, LIKE `-h`, NOT A VALUE. TESTING
+        # `in argv` FIRED WHEN IT ARRIVED AS A POSITIONAL OR OPTION VALUE -
+        # E.G. TYPED INTO A MUTATING FLOW'S TITLE FIELD - AND DUMPED THE
+        # HELP SCREEN AS THE COMMAND'S OUTPUT.
+        if argv[:1] == ["--help-all"]:
             print(help_text.full_help(__doc__))
             return
         if not argv or argv[0] in ("-h", "--help"):
@@ -754,6 +758,11 @@ def _json_requested(arguments):
     - ``jsonRequested`` -- `True` if `--json` was asked for
     """
     if arguments is None:
+        # A MEMBERSHIP TEST ON PURPOSE, NOT A LEADING-FLAG CHECK LIKE THE
+        # `--help-all` GUARD IN `main`. EVERY ALFRED CALL SITE PUTS `--json`
+        # LAST, AND THIS REDIRECT IS WHAT KEEPS A STRAY `-h`/`--version`
+        # TYPED INTO A FIELD OFF STDOUT. FAILING SAFE HERE MEANS "REDIRECT
+        # ON", SO A SPURIOUS MATCH ONLY OVER-PROTECTS.
         return "--json" in sys.argv[1:]
     return bool(arguments.get("--json"))
 
