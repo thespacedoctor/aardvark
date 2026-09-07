@@ -899,7 +899,7 @@ def list_system_folders(dbConn):
 
 def upsert_craft_link(
     dbConn, entityType, entityKey, craftFolderId=None, craftDocumentId=None, craftBlockId=None, craftUrl=None,
-    linksMarkdown=None, clearBlockId=False, clearLinksMarkdown=False,
+    linksMarkdown=None, clearBlockId=False, clearLinksMarkdown=False, clearUrl=False,
 ):
     """
     *record or refresh an entity's linked Craft folder/document/block*
@@ -915,7 +915,10 @@ def upsert_craft_link(
     old block was deleted (e.g. a `.00_index` content rewrite) and no
     replacement has been inserted yet. `clearLinksMarkdown` does the same
     for `links_markdown`, for when every link source has become
-    unavailable and the row can no longer be written at all.
+    unavailable and the row can no longer be written at all. `clearUrl`
+    does the same for `craft_url`, for when a document is replaced but the
+    space exposes no `urlTemplates` to build a deep link from, so keeping
+    the old URL would leave the row pointing at the deleted document.
 
     **Key Arguments:**
 
@@ -930,6 +933,7 @@ def upsert_craft_link(
     - ``linksMarkdown`` -- the link row's last-written markdown, if any. Default `None`.
     - ``clearBlockId`` -- if `True`, null out `craft_block_id` regardless of the `craftBlockId` argument. Default `False`.
     - ``clearLinksMarkdown`` -- if `True`, null out `links_markdown` regardless of the `linksMarkdown` argument. Default `False`.
+    - ``clearUrl`` -- if `True`, null out `craft_url` regardless of the `craftUrl` argument. Default `False`.
     """
     # `excluded.craft_block_id` ALREADY CARRIES `blockIdValue` VIA THE INSERT
     # ROW BELOW - NO SEPARATE BINDING IS NEEDED FOR THE UPDATE CLAUSE.
@@ -940,6 +944,8 @@ def upsert_craft_link(
         "excluded.links_markdown" if clearLinksMarkdown
         else "COALESCE(excluded.links_markdown, craft_links.links_markdown)"
     )
+    urlValue = None if clearUrl else craftUrl
+    urlSql = "excluded.craft_url" if clearUrl else "COALESCE(excluded.craft_url, craft_links.craft_url)"
 
     dbConn.execute(
         "INSERT INTO craft_links(entity_type, entity_key, craft_folder_id, craft_document_id, craft_block_id, craft_url, links_markdown) "
@@ -948,10 +954,10 @@ def upsert_craft_link(
         "craft_folder_id = COALESCE(excluded.craft_folder_id, craft_links.craft_folder_id), "
         "craft_document_id = COALESCE(excluded.craft_document_id, craft_links.craft_document_id), "
         f"craft_block_id = {blockIdSql}, "
-        "craft_url = COALESCE(excluded.craft_url, craft_links.craft_url), "
+        f"craft_url = {urlSql}, "
         f"links_markdown = {linksMarkdownSql}, "
         "synced_at = strftime('%Y-%m-%d %H:%M:%S','now')",
-        (entityType, entityKey, craftFolderId, craftDocumentId, blockIdValue, craftUrl, linksMarkdownValue),
+        (entityType, entityKey, craftFolderId, craftDocumentId, blockIdValue, urlValue, linksMarkdownValue),
     )
     dbConn.commit()
 
@@ -1500,7 +1506,7 @@ def record_sync_failure(dbConn, mirror, reason, failureClass):
     - ``dbConn`` -- an open SQLite connection
     - ``mirror`` -- one of `MIRRORS`
     - ``reason`` -- the failure message, as shown to the user
-    - ``failureClass`` -- a `background_sync` reason class: `rate-limited`, `auth`, `network` or `unknown`
+    - ``failureClass`` -- a `background_sync` reason class: `rate-limited`, `auth`, `network`, `not-found` or `unknown`
     """
     dbConn.execute(
         "INSERT INTO sync_drift(mirror, last_failure_at, last_failure_reason, last_failure_class) "

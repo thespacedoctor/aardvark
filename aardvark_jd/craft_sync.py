@@ -25,13 +25,29 @@ Author
 : David Young
 """
 
+import collections
+
 from aardvark_jd import db, doc_links, dropbox_client, folders, http_retry, paths
-from aardvark_jd.craft_client import CraftClient
+from aardvark_jd.craft_client import CraftApiError, CraftClient
 from aardvark_jd.dropbox_client import DropboxClient
 
 _ROOT_FOLDER_KEYS = ("root.inbox", "root.projects", "root.areas", "root.resources", "root.archive")
 _DOMAIN_ROOT_KEY = {"projects": "root.projects", "areas": "root.areas", "resources": "root.resources"}
 _INDEX_DOC_TITLE = "00 Index"
+
+# THE MOST STALE DOCUMENT IDS ONE SYNC WILL REPLACE BEFORE IT ABORTS. EACH
+# REPLACEMENT CREATES A DOCUMENT IN THE USER'S SPACE, SO A CONDITION THAT 404s
+# BROADLY - A REVOKED CONNECTION, ONE REPOINTED AT THE WRONG SPACE - MUST FAIL
+# LOUDLY RATHER THAN CREATE ONE DOCUMENT PER ENTITY ON EVERY RUN. A HEALTHY
+# SPACE NEVER APPROACHES THIS: STALE IDS ARE RARE AND ISOLATED.
+_MAX_DOCUMENT_REPAIRS_PER_RUN = 10
+
+# A CRAFT DOCUMENT AND ENOUGH TO RECREATE IT IF ITS ID GOES STALE. `title` AND
+# `folderId` ARE `None` WHERE A PRECEDING CONTENT READ ALREADY GUARDS THE ID,
+# SO NO LINK-ROW RECOVERY IS POSSIBLE OR NEEDED.
+_DocumentRef = collections.namedtuple(
+    "_DocumentRef", ["documentId", "title", "folderId"], defaults=(None, None),
+)
 
 
 class craft_sync(object):
@@ -86,6 +102,7 @@ class craft_sync(object):
         )
         self.foldersCreated = 0
         self.documentsCreated = 0
+        self.documentsRepaired = 0
         self.indexesRefreshed = 0
         self.linkRowsWritten = 0
         self.folderIndex = {}
@@ -112,7 +129,7 @@ class craft_sync(object):
 
         **Return:**
 
-        - ``summary`` -- a dict of counts: `folders_created`, `documents_created`, `indexes_refreshed`, `link_rows_written`
+        - ``summary`` -- a dict of counts: `folders_created`, `documents_created`, `documents_repaired`, `indexes_refreshed`, `link_rows_written`
         """
         self.log.debug("starting the ``get`` method")
 
@@ -128,6 +145,7 @@ class craft_sync(object):
         return {
             "folders_created": self.foldersCreated,
             "documents_created": self.documentsCreated,
+            "documents_repaired": self.documentsRepaired,
             "indexes_refreshed": self.indexesRefreshed,
             "link_rows_written": self.linkRowsWritten,
         }
@@ -201,7 +219,10 @@ class craft_sync(object):
                         "id", idKey, idName, parentFolderId=categoryFolderId,
                     )
                     documentId, _docUrl = self._ensure_document("id:index", idKey, idName, idFolderId)
-                    self._write_link_row("id:index", idKey, documentId, idRow["folder_path"], todoistEntityType="id")
+                    self._write_link_row(
+                        "id:index", idKey, _DocumentRef(documentId, idName, idFolderId),
+                        idRow["folder_path"], todoistEntityType="id",
+                    )
                     idChildren.append((None, idName, idRow["description"], idUrl))
 
                 # A CATEGORY HAS NO SEPARATE `<X>_system` FOLDER OF ITS OWN - ITS TEN
@@ -289,22 +310,82 @@ class craft_sync(object):
         if link and link["craft_document_id"]:
             return link["craft_document_id"], link["craft_url"]
 
-        # NOTHING RECORDED - BUT A DOCUMENT WITH THIS TITLE MAY ALREADY BE
-        # SITTING IN THE FOLDER, LEFT BY A REBUILT INDEX, A `_migrate_to_v4`
-        # CLEAR-OUT, AN ARCHIVE THAT DROPPED THE LINK ROWS, OR SIMPLY BY
-        # HAND. ADOPT IT RATHER THAN CREATING A DUPLICATE ALONGSIDE IT -
-        # THE SAME `(parent, name)` MATCHING `_ensure_folder` ALREADY DOES.
+        documentId, url = self._adopt_or_create_document(title, folderId)
+        db.upsert_craft_link(self.dbConn, entityType, entityKey, craftDocumentId=documentId, craftUrl=url)
+        return documentId, url
+
+    def _adopt_or_create_document(self, title, folderId):
+        """
+        *return a same-title document in the folder, creating one only when none can be adopted*
+
+        Used only when `craft_links` records **no** document id for the
+        entity - a first sync, a rebuilt index, a `_migrate_to_v4`
+        clear-out, an archive that dropped the link rows. The absence of a
+        recorded id is itself the evidence that adopting a same-title
+        document is safe. Recovery from a *stale* recorded id does not come
+        here: see `_create_replacement_document`.
+        """
+        # A DOCUMENT WITH THIS TITLE MAY ALREADY BE SITTING IN THE FOLDER.
+        # ADOPT IT RATHER THAN CREATING A DUPLICATE ALONGSIDE IT - THE SAME
+        # `(parent, name)` MATCHING `_ensure_folder` ALREADY DOES.
         adoptedId = self._adopt_document(folderId, title)
         if adoptedId:
-            url = self.client._deep_link(adoptedId)
-            db.upsert_craft_link(
-                self.dbConn, entityType, entityKey, craftDocumentId=adoptedId, craftUrl=url,
-            )
-            return adoptedId, url
+            return adoptedId, self.client._deep_link(adoptedId)
 
         documentId, url = self.client.create_document(title, folderId=folderId)
-        db.upsert_craft_link(self.dbConn, entityType, entityKey, craftDocumentId=documentId, craftUrl=url)
         self.documentsCreated += 1
+        return documentId, url
+
+    @staticmethod
+    def _is_blocks_404(error, method):
+        """*is this the structured 404 Craft returns for a `/blocks` call on an id it no longer knows?*"""
+        return (
+            isinstance(error, CraftApiError)
+            and error.method == method
+            and error.path == "/blocks"
+            and error.statusCode == 404
+        )
+
+    def _create_replacement_document(self, entityType, entityKey, title, folderId, triggeringError):
+        """
+        *create a fresh Craft document for an entity whose recorded id 404ed, and record it at once*
+
+        Recovery never adopts a same-title document. A title match is not
+        proof of ownership, and the index writer would then delete an
+        unrelated user page's content wholesale. A brand-new document is
+        created instead, and its id is written to `craft_links` immediately
+        - before any further API call - so a failure in the rest of the
+        repair leaves a tracked replacement rather than an orphan, and the
+        next run resumes from it.
+
+        Aborts the whole sync once `_MAX_DOCUMENT_REPAIRS_PER_RUN` ids have
+        been replaced in one run, because past that the 404s are a systemic
+        fault (a dead or misdirected connection), not isolated drift.
+
+        **Return:**
+
+        - ``documentId``, ``url`` -- the new document's id and deep link
+        """
+        if self.documentsRepaired >= _MAX_DOCUMENT_REPAIRS_PER_RUN:
+            # NO `statusCode` ON THIS ONE. IT IS NOT A SINGLE HTTP RESPONSE BUT A
+            # SYSTEMIC STATE - A DEAD OR MISDIRECTED CONNECTION - AND TAGGING IT
+            # 404 WOULD CLASSIFY IT AS BENIGN `not-found` DRIFT. THE WORDING
+            # AVOIDS "connection"/"network" SO `classify_failure` LANDS IT ON
+            # `unknown` RATHER THAN `network`, WHICH READS AS "JUST RETRY".
+            raise CraftApiError(
+                f"craft repair aborted: {self.documentsRepaired} recorded document ids were stale in one "
+                "run - check the Craft integration targets the expected space"
+            ) from triggeringError
+        documentId, url = self.client.create_document(title, folderId=folderId)
+        self.documentsRepaired += 1
+        self.log.warning(
+            "craft: recorded document id for %s %s was stale; replaced it with a new document %s",
+            entityType, entityKey, documentId,
+        )
+        db.upsert_craft_link(
+            self.dbConn, entityType, entityKey, craftDocumentId=documentId, craftUrl=url,
+            clearBlockId=True, clearLinksMarkdown=True, clearUrl=url is None,
+        )
         return documentId, url
 
     def _adopt_document(self, folderId, title):
@@ -352,12 +433,46 @@ class craft_sync(object):
         - ``children`` -- a list of `(codeOrNone, title, description, url)` tuples, one per child
         """
         indexEntityType = f"{entityType}:index"
-        documentId, _url = self._ensure_document(indexEntityType, entityKey, _INDEX_DOC_TITLE, folderId)
-        rewritten = self._write_index_content(documentId, children, indexEntityType, entityKey)
+        documentId, rewritten = self._write_index_content_with_recovery(
+            indexEntityType, entityKey, _INDEX_DOC_TITLE, folderId, children,
+        )
         if self.rootPath:
-            self._write_link_row(indexEntityType, entityKey, documentId, self.rootPath, forceRewrite=rewritten)
+            self._write_link_row(
+                indexEntityType, entityKey, _DocumentRef(documentId), self.rootPath, forceRewrite=rewritten,
+            )
 
-    def _write_index_content(self, documentId, children, linkEntityType, linkEntityKey):
+    def _write_index_content_with_recovery(self, entityType, entityKey, title, folderId, children):
+        """
+        *write an index document, replacing a persisted document id that Craft no longer knows*
+
+        A Craft document can be deleted outside aardvark while its id stays
+        in `craft_links`; the first content read then returns a structured
+        404. Recovery creates a fresh document - never adopts one, see
+        `_create_replacement_document` - records it immediately, and writes
+        the listing into it. Any other Craft error reaches the caller
+        unchanged.
+
+        **Return:**
+
+        - ``documentId``, ``rewritten`` -- the id written to and whether its content changed
+        """
+        documentId, _url = self._ensure_document(entityType, entityKey, title, folderId)
+        try:
+            existingBlock = self.client.get_block(documentId)
+        except CraftApiError as error:
+            if not self._is_blocks_404(error, "GET"):
+                raise
+            documentId, _url = self._create_replacement_document(
+                entityType, entityKey, title, folderId, error,
+            )
+            # A DOCUMENT JUST CREATED IS EMPTY - THERE IS NOTHING TO READ BACK.
+            existingBlock = {"content": []}
+        rewritten = self._write_index_content(
+            documentId, children, entityType, entityKey, existingBlock=existingBlock,
+        )
+        return documentId, rewritten
+
+    def _write_index_content(self, documentId, children, linkEntityType, linkEntityKey, existingBlock=None):
         """
         *rewrite an index document's content with a fresh listing of the given children, unless it already says exactly that*
 
@@ -390,6 +505,7 @@ class craft_sync(object):
         - ``children`` -- a list of `(codeOrNone, title, description, url)` tuples, one per child
         - ``linkEntityType`` -- the `craft_links` type the document's link row is keyed under (the same one the matching `_write_link_row` call is passed)
         - ``linkEntityKey`` -- the `craft_links` key the document's link row is keyed under
+        - ``existingBlock`` -- the document's already-read top-level content, to save a `get_block` round-trip; `None` to read it here. A freshly created replacement passes `{"content": []}`. Default `None`.
 
         **Return:**
 
@@ -412,7 +528,8 @@ class craft_sync(object):
         link = db.get_craft_link(self.dbConn, linkEntityType, linkEntityKey)
         linkRowMarkdown = link["links_markdown"] if link else None
 
-        existingBlock = self.client.get_block(documentId)
+        if existingBlock is None:
+            existingBlock = self.client.get_block(documentId)
         existingItems = existingBlock.get("content") or []
         if self._index_content_matches(existingItems, markdown, linkRowMarkdown):
             return False
@@ -521,20 +638,29 @@ class craft_sync(object):
             name = folders.display_name(row["folder_name"])
 
             if baseName == "00_index":
-                documentId, _url = self._ensure_document("system_folder", folderKey, name, containingFolderId)
-                rewritten = self._write_index_content(documentId, indexChildren, "system_folder", folderKey)
-                self._write_link_row("system_folder", folderKey, documentId, row["folder_path"], forceRewrite=rewritten)
+                documentId, rewritten = self._write_index_content_with_recovery(
+                    "system_folder", folderKey, name, containingFolderId, indexChildren,
+                )
+                self._write_link_row(
+                    "system_folder", folderKey, _DocumentRef(documentId), row["folder_path"],
+                    forceRewrite=rewritten,
+                )
             elif craftKind == paths.SYSTEM_SUBFOLDER_KIND_FOLDER:
                 self._ensure_folder("system_folder", folderKey, name, parentFolderId=containingFolderId)
             else:
                 documentId, _url = self._ensure_document("system_folder", folderKey, name, containingFolderId)
-                self._write_link_row("system_folder", folderKey, documentId, row["folder_path"])
+                self._write_link_row(
+                    "system_folder", folderKey, _DocumentRef(documentId, name, containingFolderId),
+                    row["folder_path"],
+                )
 
     # ------------------------------------------------------------------ #
     # Finder/Dropbox link row - see `doc_links.py`
     # ------------------------------------------------------------------ #
 
-    def _write_link_row(self, entityType, entityKey, documentId, folderPath, forceRewrite=False, todoistEntityType=None):
+    def _write_link_row(
+        self, entityType, entityKey, docRef, folderPath, forceRewrite=False, todoistEntityType=None,
+    ):
         """
         *(re)write a document's Finder/Dropbox/Todoist link row, skipping the API round-trip when nothing changed*
 
@@ -558,11 +684,12 @@ class craft_sync(object):
 
         - ``entityType`` -- the entity's `craft_links` type
         - ``entityKey`` -- the entity's `craft_links` key
-        - ``documentId`` -- the entity's Craft document id
+        - ``docRef`` -- a `_DocumentRef`: the entity's Craft document id, plus its title and containing folder id where a link-row `POST /blocks` 404 should be recovered by creating a fresh document, or both `None` where a preceding content read already guards the id.
         - ``folderPath`` -- the entity's own absolute folder path, linked to from the row
         - ``forceRewrite`` -- skip the unchanged-markdown fast path, because the document's whole body (and so the row's prior block) was just wiped by `_write_index_content`. Pass that method's return value straight through; the two are coupled in both directions. Default `False`.
         - ``todoistEntityType`` -- the entity's `todoist_links` type (`entityKey` is shared between the two tables), or `None` if this entity is never mirrored to Todoist - only IDs are. Default `None`.
         """
+        documentId = docRef.documentId
         hookmarkUrl = doc_links.hookmark_url(folderPath)
         dropboxUrl = dropbox_client.url_for_path(
             self.dbConn, self.dropboxClient, self.dropboxRoot, folderPath, self.log,
@@ -584,7 +711,7 @@ class craft_sync(object):
             # ROW NO LONGER IN THE DOCUMENT AND REWRITES IT ON EVERY RUN.
             if link and link["links_markdown"]:
                 if link["craft_block_id"]:
-                    self.client.delete_blocks([link["craft_block_id"]])
+                    self._delete_link_row_block(link["craft_block_id"])
                 db.upsert_craft_link(
                     self.dbConn, entityType, entityKey,
                     clearBlockId=True, clearLinksMarkdown=True,
@@ -596,8 +723,29 @@ class craft_sync(object):
             return
 
         if existingBlockId:
-            self.client.delete_blocks([existingBlockId])
+            self._delete_link_row_block(existingBlockId)
 
-        blockId = self.client.add_block(documentId, markdown, position="start")
+        try:
+            blockId = self.client.add_block(documentId, markdown, position="start")
+        except CraftApiError as error:
+            if not (docRef.title and self._is_blocks_404(error, "POST")):
+                raise
+            # THE STALE DOCUMENT ID IS REPLACED AND RECORDED BY
+            # `_create_replacement_document` BEFORE THIS RETRY, SO A FAILURE
+            # ON THE RETRY LEAVES A TRACKED REPLACEMENT, NOT AN ORPHAN.
+            documentId, _url = self._create_replacement_document(
+                entityType, entityKey, docRef.title, docRef.folderId, error,
+            )
+            blockId = self.client.add_block(documentId, markdown, position="start")
         db.upsert_craft_link(self.dbConn, entityType, entityKey, craftBlockId=blockId, linksMarkdown=markdown)
         self.linkRowsWritten += 1
+
+    def _delete_link_row_block(self, blockId):
+        """*delete a tracked link-row block, accepting only an already-missing block as repaired drift*"""
+        try:
+            self.client.delete_blocks([blockId])
+        except CraftApiError as error:
+            if self._is_blocks_404(error, "DELETE"):
+                self.log.warning("craft: tracked link-row block %s was already gone", blockId)
+                return
+            raise

@@ -41,7 +41,14 @@ from aardvark_jd import http_retry
 
 
 class CraftApiError(Exception):
-    pass
+    """*an unsuccessful Craft API response, with structured request metadata*"""
+
+    def __init__(self, message, method=None, path=None, statusCode=None, responseText=None):
+        super().__init__(message)
+        self.method = method
+        self.path = path
+        self.statusCode = statusCode
+        self.responseText = responseText
 
 
 class CraftClient(object):
@@ -94,7 +101,10 @@ class CraftClient(object):
             budget=self._budget, announce=self._announce, **kwargs
         )
         if not response.ok:
-            raise CraftApiError(f"craft API {method} {path} failed ({response.status_code}): {response.text}")
+            raise CraftApiError(
+                f"craft API {method} {path} failed ({response.status_code}): {response.text}",
+                method=method, path=path, statusCode=response.status_code, responseText=response.text,
+            )
         if not response.content:
             return {}
         return response.json()
