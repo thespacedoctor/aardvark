@@ -10,16 +10,6 @@
 		<array>
 			<dict>
 				<key>destinationuid</key>
-				<string>6F1B0A54-1C1E-4C3B-9C0A-2B7F1D0E5A08</string>
-				<key>modifiers</key>
-				<integer>0</integer>
-				<key>modifiersubtext</key>
-				<string></string>
-				<key>vitoclose</key>
-				<false/>
-			</dict>
-			<dict>
-				<key>destinationuid</key>
 				<string>6F1B0A54-1C1E-4C3B-9C0A-2B7F1D0E5A03</string>
 				<key>modifiers</key>
 				<integer>1048576</integer>
@@ -47,6 +37,16 @@
 				<string>Choose one destination</string>
 				<key>vitoclose</key>
 				<true/>
+			</dict>
+			<dict>
+				<key>destinationuid</key>
+				<string>6F1B0A54-1C1E-4C3B-9C0A-2B7F1D0E5A08</string>
+				<key>modifiers</key>
+				<integer>0</integer>
+				<key>modifiersubtext</key>
+				<string></string>
+				<key>vitoclose</key>
+				<false/>
 			</dict>
 		</array>
 		<key>6F1B0A54-1C1E-4C3B-9C0A-2B7F1D0E5A02</key>
@@ -118,6 +118,16 @@
 		<array>
 			<dict>
 				<key>destinationuid</key>
+				<string>6F1B0A54-1C1E-4C3B-9C0A-2B7F1D0E5A02</string>
+				<key>modifiers</key>
+				<integer>0</integer>
+				<key>modifiersubtext</key>
+				<string></string>
+				<key>vitoclose</key>
+				<false/>
+			</dict>
+			<dict>
+				<key>destinationuid</key>
 				<string>6F1B0A54-1C1E-4C3B-9C0A-2B7F1D0E5A18</string>
 				<key>modifiers</key>
 				<integer>0</integer>
@@ -125,16 +135,6 @@
 				<string></string>
 				<key>sourceoutputuid</key>
 				<string>6F1B0A54-1C1E-4C3B-9C0A-2B7F1D0EC01</string>
-				<key>vitoclose</key>
-				<false/>
-			</dict>
-			<dict>
-				<key>destinationuid</key>
-				<string>6F1B0A54-1C1E-4C3B-9C0A-2B7F1D0E5A02</string>
-				<key>modifiers</key>
-				<integer>0</integer>
-				<key>modifiersubtext</key>
-				<string></string>
 				<key>vitoclose</key>
 				<false/>
 			</dict>
@@ -182,6 +182,16 @@
 		<array>
 			<dict>
 				<key>destinationuid</key>
+				<string>6F1B0A54-1C1E-4C3B-9C0A-2B7F1D0E5A13</string>
+				<key>modifiers</key>
+				<integer>0</integer>
+				<key>modifiersubtext</key>
+				<string></string>
+				<key>vitoclose</key>
+				<false/>
+			</dict>
+			<dict>
+				<key>destinationuid</key>
 				<string>6F1B0A54-1C1E-4C3B-9C0A-2B7F1D0E5A11</string>
 				<key>modifiers</key>
 				<integer>0</integer>
@@ -201,16 +211,6 @@
 				<string></string>
 				<key>sourceoutputuid</key>
 				<string>6F1B0A54-1C1E-4C3B-9C0A-2B7F1D0EC03</string>
-				<key>vitoclose</key>
-				<false/>
-			</dict>
-			<dict>
-				<key>destinationuid</key>
-				<string>6F1B0A54-1C1E-4C3B-9C0A-2B7F1D0E5A13</string>
-				<key>modifiers</key>
-				<integer>0</integer>
-				<key>modifiersubtext</key>
-				<string></string>
 				<key>vitoclose</key>
 				<false/>
 			</dict>
@@ -320,6 +320,28 @@
 		<array>
 			<dict>
 				<key>destinationuid</key>
+				<string>6F1B0A54-1C1E-4C3B-9C0A-2B7F1D0E5A07</string>
+				<key>modifiers</key>
+				<integer>0</integer>
+				<key>modifiersubtext</key>
+				<string></string>
+				<key>vitoclose</key>
+				<false/>
+			</dict>
+			<dict>
+				<key>destinationuid</key>
+				<string>6F1B0A54-1C1E-4C3B-9C0A-2B7F1D0E5A09</string>
+				<key>modifiers</key>
+				<integer>0</integer>
+				<key>modifiersubtext</key>
+				<string></string>
+				<key>sourceoutputuid</key>
+				<string>6F1B0A54-1C1E-4C3B-9C0A-2B7F1D0EC09</string>
+				<key>vitoclose</key>
+				<false/>
+			</dict>
+			<dict>
+				<key>destinationuid</key>
 				<string>6F1B0A54-1C1E-4C3B-9C0A-2B7F1D0E5A19</string>
 				<key>modifiers</key>
 				<integer>0</integer>
@@ -339,18 +361,6 @@
 				<string></string>
 				<key>sourceoutputuid</key>
 				<string>6F1B0A54-1C1E-4C3B-9C0A-2B7F1D0EC08</string>
-				<key>vitoclose</key>
-				<false/>
-			</dict>
-			<dict>
-				<key>destinationuid</key>
-				<string>6F1B0A54-1C1E-4C3B-9C0A-2B7F1D0E5A09</string>
-				<key>modifiers</key>
-				<integer>0</integer>
-				<key>modifiersubtext</key>
-				<string></string>
-				<key>sourceoutputuid</key>
-				<string>6F1B0A54-1C1E-4C3B-9C0A-2B7F1D0EC09</string>
 				<key>vitoclose</key>
 				<false/>
 			</dict>
@@ -387,16 +397,6 @@
 				<string></string>
 				<key>sourceoutputuid</key>
 				<string>6F1B0A54-1C1E-4C3B-9C0A-2B7F1D0EC12</string>
-				<key>vitoclose</key>
-				<false/>
-			</dict>
-			<dict>
-				<key>destinationuid</key>
-				<string>6F1B0A54-1C1E-4C3B-9C0A-2B7F1D0E5A07</string>
-				<key>modifiers</key>
-				<integer>0</integer>
-				<key>modifiersubtext</key>
-				<string></string>
 				<key>vitoclose</key>
 				<false/>
 			</dict>
@@ -482,18 +482,6 @@
 		<array>
 			<dict>
 				<key>destinationuid</key>
-				<string>6F1B0A54-1C1E-4C3B-9C0A-2B7F1D0E5A23</string>
-				<key>modifiers</key>
-				<integer>0</integer>
-				<key>modifiersubtext</key>
-				<string></string>
-				<key>sourceoutputuid</key>
-				<string>6F1B0A54-1C1E-4C3B-9C0A-2B7F1D0EC14</string>
-				<key>vitoclose</key>
-				<false/>
-			</dict>
-			<dict>
-				<key>destinationuid</key>
 				<string>6F1B0A54-1C1E-4C3B-9C0A-2B7F1D0E5A15</string>
 				<key>modifiers</key>
 				<integer>0</integer>
@@ -501,6 +489,18 @@
 				<string></string>
 				<key>sourceoutputuid</key>
 				<string>6F1B0A54-1C1E-4C3B-9C0A-2B7F1D0EC15</string>
+				<key>vitoclose</key>
+				<false/>
+			</dict>
+			<dict>
+				<key>destinationuid</key>
+				<string>6F1B0A54-1C1E-4C3B-9C0A-2B7F1D0E5A23</string>
+				<key>modifiers</key>
+				<integer>0</integer>
+				<key>modifiersubtext</key>
+				<string></string>
+				<key>sourceoutputuid</key>
+				<string>6F1B0A54-1C1E-4C3B-9C0A-2B7F1D0EC14</string>
 				<key>vitoclose</key>
 				<false/>
 			</dict>
@@ -622,18 +622,6 @@
 		<array>
 			<dict>
 				<key>destinationuid</key>
-				<string>6F1B0A54-1C1E-4C3B-9C0A-2B7F1D0E5A31</string>
-				<key>modifiers</key>
-				<integer>0</integer>
-				<key>modifiersubtext</key>
-				<string></string>
-				<key>sourceoutputuid</key>
-				<string>6F1B0A54-1C1E-4C3B-9C0A-2B7F1D0EC17</string>
-				<key>vitoclose</key>
-				<false/>
-			</dict>
-			<dict>
-				<key>destinationuid</key>
 				<string>6F1B0A54-1C1E-4C3B-9C0A-2B7F1D0E5A15</string>
 				<key>modifiers</key>
 				<integer>0</integer>
@@ -641,6 +629,18 @@
 				<string></string>
 				<key>sourceoutputuid</key>
 				<string>6F1B0A54-1C1E-4C3B-9C0A-2B7F1D0EC18</string>
+				<key>vitoclose</key>
+				<false/>
+			</dict>
+			<dict>
+				<key>destinationuid</key>
+				<string>6F1B0A54-1C1E-4C3B-9C0A-2B7F1D0E5A31</string>
+				<key>modifiers</key>
+				<integer>0</integer>
+				<key>modifiersubtext</key>
+				<string></string>
+				<key>sourceoutputuid</key>
+				<string>6F1B0A54-1C1E-4C3B-9C0A-2B7F1D0EC17</string>
 				<key>vitoclose</key>
 				<false/>
 			</dict>
@@ -762,18 +762,6 @@
 		<array>
 			<dict>
 				<key>destinationuid</key>
-				<string>6F1B0A54-1C1E-4C3B-9C0A-2B7F1D0E5A39</string>
-				<key>modifiers</key>
-				<integer>0</integer>
-				<key>modifiersubtext</key>
-				<string></string>
-				<key>sourceoutputuid</key>
-				<string>6F1B0A54-1C1E-4C3B-9C0A-2B7F1D0EC20</string>
-				<key>vitoclose</key>
-				<false/>
-			</dict>
-			<dict>
-				<key>destinationuid</key>
 				<string>6F1B0A54-1C1E-4C3B-9C0A-2B7F1D0E5A15</string>
 				<key>modifiers</key>
 				<integer>0</integer>
@@ -781,6 +769,18 @@
 				<string></string>
 				<key>sourceoutputuid</key>
 				<string>6F1B0A54-1C1E-4C3B-9C0A-2B7F1D0EC21</string>
+				<key>vitoclose</key>
+				<false/>
+			</dict>
+			<dict>
+				<key>destinationuid</key>
+				<string>6F1B0A54-1C1E-4C3B-9C0A-2B7F1D0E5A39</string>
+				<key>modifiers</key>
+				<integer>0</integer>
+				<key>modifiersubtext</key>
+				<string></string>
+				<key>sourceoutputuid</key>
+				<string>6F1B0A54-1C1E-4C3B-9C0A-2B7F1D0EC20</string>
 				<key>vitoclose</key>
 				<false/>
 			</dict>
@@ -981,6 +981,8 @@
 				<true/>
 				<key>alfredfiltersresultsmatchmode</key>
 				<integer>2</integer>
+				<key>argumenttreatemptyqueryasnil</key>
+				<false/>
 				<key>argumenttrimmode</key>
 				<integer>0</integer>
 				<key>argumenttype</key>
@@ -1097,6 +1099,8 @@
 				<false/>
 				<key>alfredfiltersresultsmatchmode</key>
 				<integer>0</integer>
+				<key>argumenttreatemptyqueryasnil</key>
+				<false/>
 				<key>argumenttrimmode</key>
 				<integer>0</integer>
 				<key>argumenttype</key>
@@ -1167,11 +1171,7 @@
 				<false/>
 				<key>onlyshowifquerypopulated</key>
 				<true/>
-				<key>output</key>
-				<integer>0</integer>
 				<key>removeextension</key>
-				<false/>
-				<key>sticky</key>
 				<false/>
 				<key>text</key>
 				<string>{query}</string>
@@ -1224,6 +1224,8 @@
 				<true/>
 				<key>alfredfiltersresultsmatchmode</key>
 				<integer>2</integer>
+				<key>argumenttreatemptyqueryasnil</key>
+				<false/>
 				<key>argumenttrimmode</key>
 				<integer>0</integer>
 				<key>argumenttype</key>
@@ -1271,6 +1273,8 @@
 				<false/>
 				<key>alfredfiltersresultsmatchmode</key>
 				<integer>0</integer>
+				<key>argumenttreatemptyqueryasnil</key>
+				<false/>
 				<key>argumenttrimmode</key>
 				<integer>0</integer>
 				<key>argumenttype</key>
@@ -1318,6 +1322,8 @@
 				<false/>
 				<key>alfredfiltersresultsmatchmode</key>
 				<integer>0</integer>
+				<key>argumenttreatemptyqueryasnil</key>
+				<false/>
 				<key>argumenttrimmode</key>
 				<integer>0</integer>
 				<key>argumenttype</key>
@@ -1434,6 +1440,8 @@
 				<false/>
 				<key>alfredfiltersresultsmatchmode</key>
 				<integer>0</integer>
+				<key>argumenttreatemptyqueryasnil</key>
+				<false/>
 				<key>argumenttrimmode</key>
 				<integer>0</integer>
 				<key>argumenttype</key>
@@ -1684,6 +1692,8 @@
 				<true/>
 				<key>alfredfiltersresultsmatchmode</key>
 				<integer>2</integer>
+				<key>argumenttreatemptyqueryasnil</key>
+				<false/>
 				<key>argumenttrimmode</key>
 				<integer>0</integer>
 				<key>argumenttype</key>
@@ -1731,6 +1741,8 @@
 				<false/>
 				<key>alfredfiltersresultsmatchmode</key>
 				<integer>0</integer>
+				<key>argumenttreatemptyqueryasnil</key>
+				<false/>
 				<key>argumenttrimmode</key>
 				<integer>0</integer>
 				<key>argumenttype</key>
@@ -1810,6 +1822,8 @@
 				<false/>
 				<key>alfredfiltersresultsmatchmode</key>
 				<integer>0</integer>
+				<key>argumenttreatemptyqueryasnil</key>
+				<false/>
 				<key>argumenttrimmode</key>
 				<integer>0</integer>
 				<key>argumenttype</key>
@@ -1857,6 +1871,8 @@
 				<false/>
 				<key>alfredfiltersresultsmatchmode</key>
 				<integer>0</integer>
+				<key>argumenttreatemptyqueryasnil</key>
+				<false/>
 				<key>argumenttrimmode</key>
 				<integer>0</integer>
 				<key>argumenttype</key>
@@ -1973,6 +1989,8 @@
 				<false/>
 				<key>alfredfiltersresultsmatchmode</key>
 				<integer>0</integer>
+				<key>argumenttreatemptyqueryasnil</key>
+				<false/>
 				<key>argumenttrimmode</key>
 				<integer>0</integer>
 				<key>argumenttype</key>
@@ -2020,6 +2038,8 @@
 				<true/>
 				<key>alfredfiltersresultsmatchmode</key>
 				<integer>2</integer>
+				<key>argumenttreatemptyqueryasnil</key>
+				<false/>
 				<key>argumenttrimmode</key>
 				<integer>0</integer>
 				<key>argumenttype</key>
@@ -2067,6 +2087,8 @@
 				<false/>
 				<key>alfredfiltersresultsmatchmode</key>
 				<integer>0</integer>
+				<key>argumenttreatemptyqueryasnil</key>
+				<false/>
 				<key>argumenttrimmode</key>
 				<integer>0</integer>
 				<key>argumenttype</key>
@@ -2146,6 +2168,8 @@
 				<false/>
 				<key>alfredfiltersresultsmatchmode</key>
 				<integer>0</integer>
+				<key>argumenttreatemptyqueryasnil</key>
+				<false/>
 				<key>argumenttrimmode</key>
 				<integer>0</integer>
 				<key>argumenttype</key>
@@ -2193,6 +2217,8 @@
 				<false/>
 				<key>alfredfiltersresultsmatchmode</key>
 				<integer>0</integer>
+				<key>argumenttreatemptyqueryasnil</key>
+				<false/>
 				<key>argumenttrimmode</key>
 				<integer>0</integer>
 				<key>argumenttype</key>
@@ -2309,6 +2335,8 @@
 				<false/>
 				<key>alfredfiltersresultsmatchmode</key>
 				<integer>0</integer>
+				<key>argumenttreatemptyqueryasnil</key>
+				<false/>
 				<key>argumenttrimmode</key>
 				<integer>0</integer>
 				<key>argumenttype</key>
@@ -2356,6 +2384,8 @@
 				<true/>
 				<key>alfredfiltersresultsmatchmode</key>
 				<integer>2</integer>
+				<key>argumenttreatemptyqueryasnil</key>
+				<false/>
 				<key>argumenttrimmode</key>
 				<integer>0</integer>
 				<key>argumenttype</key>
@@ -2403,6 +2433,8 @@
 				<true/>
 				<key>alfredfiltersresultsmatchmode</key>
 				<integer>2</integer>
+				<key>argumenttreatemptyqueryasnil</key>
+				<false/>
 				<key>argumenttrimmode</key>
 				<integer>0</integer>
 				<key>argumenttype</key>
@@ -2450,6 +2482,8 @@
 				<false/>
 				<key>alfredfiltersresultsmatchmode</key>
 				<integer>0</integer>
+				<key>argumenttreatemptyqueryasnil</key>
+				<false/>
 				<key>argumenttrimmode</key>
 				<integer>0</integer>
 				<key>argumenttype</key>
@@ -2529,6 +2563,8 @@
 				<false/>
 				<key>alfredfiltersresultsmatchmode</key>
 				<integer>0</integer>
+				<key>argumenttreatemptyqueryasnil</key>
+				<false/>
 				<key>argumenttrimmode</key>
 				<integer>0</integer>
 				<key>argumenttype</key>
@@ -2645,6 +2681,8 @@
 				<false/>
 				<key>alfredfiltersresultsmatchmode</key>
 				<integer>0</integer>
+				<key>argumenttreatemptyqueryasnil</key>
+				<false/>
 				<key>argumenttrimmode</key>
 				<integer>0</integer>
 				<key>argumenttype</key>
@@ -2692,6 +2730,8 @@
 				<true/>
 				<key>alfredfiltersresultsmatchmode</key>
 				<integer>2</integer>
+				<key>argumenttreatemptyqueryasnil</key>
+				<false/>
 				<key>argumenttrimmode</key>
 				<integer>0</integer>
 				<key>argumenttype</key>
@@ -2739,6 +2779,8 @@
 				<false/>
 				<key>alfredfiltersresultsmatchmode</key>
 				<integer>0</integer>
+				<key>argumenttreatemptyqueryasnil</key>
+				<false/>
 				<key>argumenttrimmode</key>
 				<integer>0</integer>
 				<key>argumenttype</key>
@@ -2841,6 +2883,8 @@
 				<false/>
 				<key>alfredfiltersresultsmatchmode</key>
 				<integer>0</integer>
+				<key>argumenttreatemptyqueryasnil</key>
+				<false/>
 				<key>argumenttrimmode</key>
 				<integer>0</integer>
 				<key>argumenttype</key>
@@ -2888,6 +2932,8 @@
 				<true/>
 				<key>alfredfiltersresultsmatchmode</key>
 				<integer>2</integer>
+				<key>argumenttreatemptyqueryasnil</key>
+				<false/>
 				<key>argumenttrimmode</key>
 				<integer>0</integer>
 				<key>argumenttype</key>
@@ -2935,6 +2981,8 @@
 				<false/>
 				<key>alfredfiltersresultsmatchmode</key>
 				<integer>0</integer>
+				<key>argumenttreatemptyqueryasnil</key>
+				<false/>
 				<key>argumenttrimmode</key>
 				<integer>0</integer>
 				<key>argumenttype</key>
@@ -2982,6 +3030,8 @@
 				<false/>
 				<key>alfredfiltersresultsmatchmode</key>
 				<integer>0</integer>
+				<key>argumenttreatemptyqueryasnil</key>
+				<false/>
 				<key>argumenttrimmode</key>
 				<integer>0</integer>
 				<key>argumenttype</key>
@@ -3052,6 +3102,8 @@
 				<false/>
 				<key>alfredfiltersresultsmatchmode</key>
 				<integer>0</integer>
+				<key>argumenttreatemptyqueryasnil</key>
+				<false/>
 				<key>argumenttrimmode</key>
 				<integer>0</integer>
 				<key>argumenttype</key>
