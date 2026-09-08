@@ -49,3 +49,6 @@ blog-post.rst
 /README.rst-e
 /test-reports
 /reports
+
+# CodeGraph index — local to each machine
+.codegraph/
