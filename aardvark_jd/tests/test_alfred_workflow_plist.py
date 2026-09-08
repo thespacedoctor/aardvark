@@ -147,14 +147,12 @@ def test_every_conditional_output_is_matched_by_exactly_one_edge():
         assert wired == conditionUids, (
             f"{conditional['uid']}: conditions {conditionUids} vs wired outputs {wired}"
         )
+        # EXACTLY ONE EDGE CARRIES NO `sourceoutputuid` - THE `else` BRANCH.
+        # ITS POSITION IN THE ARRAY IS NOT SIGNIFICANT: ALFRED ROUTES BY
+        # `sourceoutputuid` VALUE AND FREELY REORDERS THE EDGES ON SAVE
+        # (observed - it moved several `else` edges to the front).
         elseEdges = [e for e in edges if "sourceoutputuid" not in e]
         assert len(elseEdges) == 1, f"{conditional['uid']} needs exactly one else edge"
-        # ALFRED ROUTES A CONDITIONAL'S `else` BRANCH THROUGH THE ONE EDGE
-        # WITH NO `sourceoutputuid`, AND IT MUST BE LAST. A REORDER (E.G.
-        # AFTER AN ALFRED SAVE) WOULD PASS THE COUNT CHECK BUT MISROUTE.
-        assert "sourceoutputuid" not in edges[-1], (
-            f"{conditional['uid']}'s else edge is not last"
-        )
 
 
 def test_the_command_gate_routes_command_rows_to_the_router():
